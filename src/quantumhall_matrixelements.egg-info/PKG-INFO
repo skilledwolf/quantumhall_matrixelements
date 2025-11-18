@@ -1,0 +1,90 @@
+Metadata-Version: 2.4
+Name: quantumhall_matrixelements
+Version: 0.1.0
+Summary: Landau-level plane-wave form factors and exchange kernels for quantum Hall systems.
+Author-email: Tobias Wolf <public@wolft.xyz>
+License: MIT
+Project-URL: Homepage, https://github.com/wolft/quantumhall_matrixelements
+Project-URL: Issues, https://github.com/wolft/quantumhall_matrixelements/issues
+Keywords: quantum Hall,matrix elements,form factors,exchange kernels,Landau levels
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Intended Audience :: Science/Research
+Classifier: Topic :: Scientific/Engineering :: Physics
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: numpy>=1.26
+Requires-Dist: scipy>=1.11
+Requires-Dist: hankel>=1.2
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-cov>=5.0; extra == "dev"
+Requires-Dist: ruff>=0.5.0; extra == "dev"
+Requires-Dist: mypy>=1.10; extra == "dev"
+Requires-Dist: build; extra == "dev"
+Requires-Dist: twine; extra == "dev"
+Dynamic: license-file
+
+# quantumhall_matrixelements
+
+Landau-level plane-wave form factors and exchange kernels for quantum Hall systems.
+
+This library factors out the continuum matrix-element kernels used in Hartree–Fock and
+related calculations into a small, reusable package. It provides:
+
+- Analytic Landau-level plane-wave form factors `F_{n',n}(G)`.
+- Exchange kernels `X_{n1 m1 n2 m2}(G)` computed via:
+  - Generalized Gauss–Laguerre quadrature (`gausslag` backend).
+  - Hankel-transform based integration (`hankel` backend).
+- Symmetry diagnostics for verifying kernel implementations on a given G-grid.
+
+## Installation
+
+From a local checkout:
+
+```bash
+pip install -e .[dev]
+```
+
+## Basic usage
+
+```python
+import numpy as np
+from quantumhall_matrixelements import (
+    get_form_factors,
+    get_exchange_kernels,
+)
+
+# Simple G set: G0=(0,0), G+=(1,0), G-=(-1,0)
+Gs_dimless = np.array([0.0, 1.0, 1.0])
+thetas = np.array([0.0, 0.0, np.pi])
+nmax = 2
+
+F = get_form_factors(Gs_dimless, thetas, nmax)          # shape (nG, nmax, nmax)
+X = get_exchange_kernels(Gs_dimless, thetas, nmax)      # default 'gausslag' backend
+
+print("F shape:", F.shape)
+print("X shape:", X.shape)
+```
+
+For more detailed examples, see the tests under `tests/`.
+
+## Development
+
+- Run tests and coverage:
+
+  ```bash
+  pytest
+  ```
+
+- Lint and type-check:
+
+  ```bash
+  ruff check .
+  mypy .
+  ```
+
