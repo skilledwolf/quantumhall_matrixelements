@@ -1,6 +1,6 @@
 # quantumhall-matrixelements: Quantum Hall Landau-Level Matrix Elements
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17646027.svg)](https://doi.org/10.5281/zenodo.17646027)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17646158.svg)](https://doi.org/10.5281/zenodo.17646158)
 
 Landau-level plane-wave form factors and exchange kernels for quantum Hall systems in a small, reusable package (useful for Hartree-Fock and related calculations). It provides:
 
@@ -98,9 +98,9 @@ For more detailed examples, see the example scripts under `examples/` and the te
 If you use the package `quantumhall-matrixelements` in academic work, you must cite:
 
 > Tobias Wolf, *quantumhall-matrixelements: Quantum Hall Landau-Level Matrix Elements*, version 0.1.0, 2025.  
-> DOI: https://doi.org/10.5281/zenodo.17646027
+> DOI: https://doi.org/10.5281/zenodo.17646158
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17646027.svg)](https://doi.org/10.5281/zenodo.17646027)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17646158.svg)](https://doi.org/10.5281/zenodo.17646158)
 
 A machine-readable `CITATION.cff` file is included in the repository and can be used with tools that support it (for example, GitHub’s “Cite this repository” button).
 
