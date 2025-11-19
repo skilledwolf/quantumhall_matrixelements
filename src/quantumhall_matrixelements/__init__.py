@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
+from importlib.metadata import PackageNotFoundError, version as _metadata_version
 
 from .planewave import get_form_factors
 from .exchange_gausslag import get_exchange_kernels_GaussLag
@@ -70,11 +71,18 @@ def get_exchange_kernels(
     raise ValueError(f"Unknown exchange-kernel method: {method!r}. Use 'gausslegendre', 'gausslag', or 'hankel'.")
 
 
+try:
+    # Version is managed by setuptools_scm and exposed via package metadata.
+    __version__ = _metadata_version("quantumhall_matrixelements")
+except PackageNotFoundError:  # pragma: no cover - fallback for local, non-installed usage
+    __version__ = "0.0"
+
+
 __all__ = [
     "get_form_factors",
     "get_exchange_kernels",
     "get_exchange_kernels_GaussLag",
     "get_exchange_kernels_hankel",
     "get_exchange_kernels_GaussLegendre",
+    "__version__",
 ]
-
