@@ -8,7 +8,8 @@ Landau-level plane-wave form factors and exchange kernels for quantum Hall syste
 - Exchange kernels $X_{n_1 m_1 n_2 m_2}(\mathbf{G})$. 
 - Symmetry diagnostics for verifying kernel implementations. 
 
-### Plane-Wave Landau-level Form Factors $ (F_{n',n}(\mathbf{q}) = \langle n' | e^{i \mathbf{q} \cdot \mathbf{R}} | n \rangle )$
+### Plane-Wave Landau-level Form Factors 
+The plane-wave matrix element $F_{n',n}(\mathbf{q}) = \langle n' | e^{i \mathbf{q} \cdot \mathbf{R}} | n \rangle$ can be written as
 
 $$
 F_{n',n}(\mathbf{q}) =
