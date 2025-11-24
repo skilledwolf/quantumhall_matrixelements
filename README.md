@@ -26,7 +26,7 @@ where $n_< = \min(n, n')$, $n_> = \max(n, n')$, and $L_n^\alpha$ are the general
 ### Exchange Kernels
 
 
-$$ X_{n_1 m_1 n_2 m_2}(\mathbf{G}) = \int \frac{d^2 q}{(2\pi)^2} V(q) F_{n_1, m_1}(\mathbf{q}) F_{m_2, n_2}(-\mathbf{q}) e^{-i \mathbf{q} \cdot \mathbf{G} \ell_B^2} $$
+$$ X_{n_1 m_1 n_2 m_2}(\mathbf{G}) = \int \frac{d^2 q}{(2\pi)^2} V(q) F_{m_1, n_1}(\mathbf{q}) F_{n_2, m_2}(-\mathbf{q}) e^{i (\mathbf{q} \times \mathbf{G})_z \ell_B^2} $$
 
 where $V(q)$ is the interaction potential. For the Coulomb interaction, $V(q) = \frac{2\pi e^2}{\epsilon q}$.
 
