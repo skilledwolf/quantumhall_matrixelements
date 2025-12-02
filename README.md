@@ -4,17 +4,18 @@
 
 Landau-level plane-wave form factors and exchange kernels for quantum Hall systems in a small, reusable package (useful for Hartree-Fock and related calculations). It provides:
 
-- Analytic Landau-level plane-wave form factors $F_{n',n}(\mathbf{q})$.
-- Exchange kernels $X_{n_1 m_1 n_2 m_2}(\mathbf{G})$. 
+- Analytic Landau-level plane-wave form factors $F_{n',n}^\sigma(\mathbf{q})$.
+- Exchange kernels $X_{n_1 m_1 n_2 m_2}^\sigma(\mathbf{G})$. 
 - Symmetry diagnostics for verifying kernel implementations. 
 
 ### Plane-Wave Landau-level Form Factors 
-The plane-wave matrix element $F_{n',n}(\mathbf{q}) = \langle n' | e^{i \mathbf{q} \cdot \mathbf{R}} | n \rangle$ can be written as
+For $\sigma = \operatorname{sgn}(qB_z)$, where $q$ is the charge of the carrier and $B_z$ is the magnetic field direction,
+The plane-wave matrix element $F^\sigma_{n',n}(\mathbf{q}) = \langle n' | e^{i \mathbf{q} \cdot \mathbf{R}_\sigma} | n \rangle$ can be written as
 
 $$
-F_{n',n}(\mathbf{q}) =
+F_{n',n}^\sigma(\mathbf{q}) =
 i^{|n-n'|}
-e^{i(n-n')\theta_{\mathbf{q}}}
+e^{i\sigma(n'-n)\theta_{\mathbf{q}}}
 \sqrt{\frac{n_{<}!}{n_{>}!}}
 \left( \frac{|\mathbf{q}|\ell_{B}}{\sqrt{2}} \right)^{|n-n'|}
 L_{n_<}^{|n-n'|}\left( \frac{|\mathbf{q}|^2 \ell_{B}^2}{2} \right)
@@ -26,7 +27,7 @@ where $n_< = \min(n, n')$, $n_> = \max(n, n')$, and $L_n^\alpha$ are the general
 ### Exchange Kernels
 
 
-$$ X_{n_1 m_1 n_2 m_2}(\mathbf{G}) = \int \frac{d^2 q}{(2\pi)^2} V(q) F_{m_1, n_1}(\mathbf{q}) F_{n_2, m_2}(-\mathbf{q}) e^{i (\mathbf{q} \times \mathbf{G})_z \ell_B^2} $$
+$$ X_{n_1 m_1 n_2 m_2}^\sigma(\mathbf{G}) = \int \frac{d^2 q}{(2\pi)^2} V(q) F_{m_1, n_1}^\sigma(\mathbf{q}) F_{n_2, m_2}^\sigma(-\mathbf{q}) e^{i\sigma (\mathbf{q} \times \mathbf{G})_z \ell_B^2} $$
 
 where $V(q)$ is the interaction potential. For the Coulomb interaction, $V(q) = \frac{2\pi e^2}{\epsilon q}$.
 
@@ -124,7 +125,15 @@ The package provides three backends for computing exchange kernels, each with di
     -   **Pros**: High precision and stability.
     -   **Cons**: Significantly slower than quadrature methods.
     -   **Recommended for**: Reference calculations and verifying other backends.
-
+## Notes
+The following wavefunction used to find all matrix elements:
+$$
+\Psi_{nX}^\sigma(x,y)
+= \frac{e^{i\sigma X y \ell_B^{-2}}}{\sqrt{L_y}}i^n\,
+\phi_{n}(x -X),
+\qquad
+X = \sigma k_y \ell_B^{2}.
+$$
 ## Development
 
 - Run tests and coverage:
@@ -142,6 +151,6 @@ The package provides three backends for computing exchange kernels, each with di
 
 ## Authors and license
 
-- Author: Dr. Tobias Wolf
+- Author: Dr. Tobias Wolf, Sparsh Mishra
 - Copyright © 2025 Tobias Wolf
 - License: MIT (see `LICENSE`).
