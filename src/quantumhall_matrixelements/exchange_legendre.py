@@ -21,7 +21,8 @@ def _N_order(n1: int, m1: int, n2: int, m2: int) -> int:
 
 
 def _parity_factor(N: int) -> int:
-    """(-1)^((N+|N|)/2) → (-1)^N for N>=0, and 1 for N<0."""
+    #"""(-1)^((N+|N|)/2) → (-1)^N for N>=0, and 1 for N<0."""
+    """(-1)^((N-|N|)/2) → (-1)^N for N<=0, and 1 for N>0."""# CHANGE HERE NEGATIVE B FIELD
     #return (-1) ** ((N + abs(N)) // 2) # change here
     return (-1) ** ((N - abs(N)) // 2) # CHANGE HERE NEGATIVE B FIELD
 
@@ -64,6 +65,7 @@ def get_exchange_kernels_GaussLegendre(
     nquad: int = 1000,
     scale: float = 0.5,
     ell: float = 1.0,
+    sigma: int = -1,
 ) -> "ComplexArray":
     """Compute X_{n1,m1,n2,m2}(G) using Gauss-Legendre quadrature with rational mapping.
 
@@ -94,6 +96,9 @@ def get_exchange_kernels_GaussLegendre(
     -------
     Xs : (nG, nmax, nmax, nmax, nmax) complex array
     """
+    if sigma not in (1, -1):
+        raise ValueError("sigma must be 1 or -1")
+    
     G_magnitudes = np.asarray(G_magnitudes, dtype=float)
     G_angles = np.asarray(G_angles, dtype=float)
     if G_magnitudes.shape != G_angles.shape:
@@ -198,7 +203,13 @@ def get_exchange_kernels_GaussLegendre(
 
                     Xs[:, n1, m1, n2, m2] = (pref * phase) * (signN * radial) * extra_sgn # CHANGED HERE NEGATIVE B FIELD
 
-    return Xs
+    if sigma == -1: #matching convention in package
+        return Xs
+    else: # sigma == 1, apply phase factor for positive B field
+        idx = np.arange(Xs.shape[1])
+        phase = np.where((idx[:, None] - idx[None, :]) % 2 == 0, 1.0, -1.0)
+        phase = phase[:, :, None, None] * phase[None, None, :, :]
+        return np.conj(Xs) * phase
 
 
 __all__ = ["get_exchange_kernels_GaussLegendre"]
