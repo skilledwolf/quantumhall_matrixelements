@@ -78,6 +78,7 @@ def get_exchange_kernels_hankel(
     *,
     potential: str | callable = "coulomb",
     kappa: float = 1.0,
+    sigma:int =1,
 ) -> "ComplexArray":
     """Compute X_{n1,m1,n2,m2}(G) via Hankel transforms (κ=1 convention).
 
@@ -98,6 +99,9 @@ def get_exchange_kernels_hankel(
     kappa :
         Prefactor for Coulomb/constant cases.
     """
+    if sigma not in (1, -1):
+        raise ValueError("sigma must be 1 or -1")
+
     G_magnitudes = np.asarray(G_magnitudes, dtype=float)
     G_angles = np.asarray(G_angles, dtype=float)
     if G_magnitudes.shape != G_angles.shape:
@@ -185,6 +189,9 @@ def get_exchange_kernels_hankel(
                     phase_internal = phase_internal_table[d1, d2]
                     phase_angle = phase_by_N[N]
                     Xs[:, n1, m1, n2, m2] = phase_internal * phase_angle * X_radial
+
+
+
 
     return Xs
 

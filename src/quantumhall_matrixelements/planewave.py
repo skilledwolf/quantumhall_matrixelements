@@ -20,6 +20,7 @@ def _analytic_form_factor(
     q_magnitudes: "RealArray",
     q_angles: "RealArray",
     lB: float,
+    sigma: int = -1,
 ) -> "ComplexArray":
     """Vectorized Landau level form factor F_{n_row, n_col}(q).
 
@@ -27,6 +28,9 @@ def _analytic_form_factor(
                   sqrt(n_min!/n_max!) (|q|ℓ/√2)^{|n'-n|}
                   L_{n_min}^{|n'-n|}(|q|²ℓ²/2) e^{-|q|²ℓ²/4}
     """
+
+    if sigma not in (1, -1):
+        raise ValueError("sigma must be 1 or -1")
     n_min = np.minimum(n_row, n_col)
     n_max = np.maximum(n_row, n_col)
     delta_n_abs = np.abs(n_row - n_col)
@@ -53,12 +57,16 @@ def _analytic_form_factor(
         * laguerre_poly
         * np.exp(-0.5 * arg_z)
     )
+    if sigma == -1:
+        return F
 
-    return F if F.ndim > 0 else F[()]
-
+    idx = np.arange(F.shape[-1])
+    diff = idx[:, None] - idx[None, :]
+    phase = np.where((diff % 2) == 0, 1.0, -1.0)
+    return np.conj(F) * phase
 
 def get_form_factors(
-    q_magnitudes: "RealArray", q_angles: "RealArray", nmax: int, lB: float = 1.0
+    q_magnitudes: "RealArray", q_angles: "RealArray", nmax: int, lB: float = 1.0,sigma:int=-1
 ) -> "ComplexArray":
     """Precompute F_{n',n}(G) for all G and Landau levels.
 
@@ -84,8 +92,8 @@ def get_form_factors(
         q_magnitudes=np.asarray(q_magnitudes)[:, None, None],
         q_angles=np.asarray(q_angles)[:, None, None],
         lB=lB,
+        sigma=sigma,
     ).astype(np.complex128)
 
 
 __all__ = ["get_form_factors"]
-
