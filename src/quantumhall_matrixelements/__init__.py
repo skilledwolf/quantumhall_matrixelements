@@ -10,15 +10,16 @@ elements in a Landau-level basis:
 """
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _metadata_version
 from typing import TYPE_CHECKING
 
 import numpy as np
-from importlib.metadata import PackageNotFoundError, version as _metadata_version
 
-from .diagnostic import get_form_factors_opposite_field, get_exchange_kernels_opposite_field
-from .planewave import get_form_factors
+from .diagnostic import get_exchange_kernels_opposite_field, get_form_factors_opposite_field
 from .exchange_hankel import get_exchange_kernels_hankel
 from .exchange_legendre import get_exchange_kernels_GaussLegendre
+from .planewave import get_form_factors
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -28,13 +29,13 @@ if TYPE_CHECKING:
 
 
 def get_exchange_kernels(
-    G_magnitudes: "RealArray",
-    G_angles: "RealArray",
+    G_magnitudes: RealArray,
+    G_angles: RealArray,
     nmax: int,
     *,
     method: str | None = None,
     **kwargs,
-) -> "ComplexArray":
+) -> ComplexArray:
     """Dispatcher for exchange kernels.
 
     Parameters

@@ -1,7 +1,7 @@
 """Exchange kernels via Hankel transforms."""
 from __future__ import annotations
 
-from functools import lru_cache
+from functools import cache
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -23,7 +23,7 @@ def _N_order(n1: int, m1: int, n2: int, m2: int) -> int:
 def _parity_factor(N: int) -> int:
     return (-1) ** ((N - abs(N)) // 2)
 
-@lru_cache(maxsize=None)
+@cache
 def _get_hankel_transformer(order: int) -> HankelTransform:
     """Cached HankelTransform instance for a given Bessel order."""
     return HankelTransform(nu=order, N=6000, h=7e-6)
@@ -72,14 +72,14 @@ def _radial_exchange_integrand_rgamma(
 
 
 def get_exchange_kernels_hankel(
-    G_magnitudes: "RealArray",
-    G_angles: "RealArray",
+    G_magnitudes: RealArray,
+    G_angles: RealArray,
     nmax: int,
     *,
     potential: str | callable = "coulomb",
     kappa: float = 1.0,
     sign_magneticfield: int = -1,
-) -> "ComplexArray":
+) -> ComplexArray:
     """Compute X_{n1,m1,n2,m2}(G) via Hankel transforms (κ=1 convention).
 
     This backend parametrizes the radial integral via Hankel transforms with

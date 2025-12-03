@@ -1,12 +1,11 @@
 """Exchange kernels via Gauss-Legendre quadrature with rational mapping."""
 from __future__ import annotations
 
-from functools import lru_cache
+from functools import cache
 from typing import TYPE_CHECKING
 
 import numpy as np
 import scipy.special as sps
-
 from scipy.special import roots_legendre
 
 if TYPE_CHECKING:
@@ -20,13 +19,13 @@ from .diagnostic import get_exchange_kernels_opposite_field
 
 def _parity_factor(N: int) -> int:
     """(-1)^((N-|N|)/2) → (-1)^N for N<0, and 1 for N>=0."""
-    return (-1) ** ((N - abs(N)) // 2) 
+    return (-1) ** ((N - abs(N)) // 2)
 
-@lru_cache(maxsize=None)
+@cache
 def _logfact(n: int) -> float:
     return float(sps.gammaln(n + 1))
 
-@lru_cache(maxsize=None)
+@cache
 def _legendre_nodes_weights_mapped(nquad: int, scale: float):
     """
     Gauss-Legendre nodes/weights mapped from [-1, 1] to [0, inf).
@@ -50,7 +49,7 @@ def get_exchange_kernels_GaussLegendre(
     scale: float = 0.5,
     ell: float = 1.0,
     sign_magneticfield: int = -1,
-) -> "ComplexArray":
+) -> ComplexArray:
     """Compute exchange kernels X_{n1,m1,n2,m2}(G) using Gauss-Legendre quadrature.
 
     This function evaluates the exchange matrix elements for a 2D electron gas
@@ -159,9 +158,7 @@ def get_exchange_kernels_GaussLegendre(
     arg = Gscaled[:, None] * sqrt2z[None, :]  # (nG, nquad)
 
     # Callable potential: evaluated once on the quadrature grid
-    if is_coulomb:
-        Veff = None
-    else:
+    if not is_coulomb:
         qvals = sqrt2z / float(ell)        # (nquad,)
         Veff = pot_fn(qvals) / (2.0 * np.pi * float(ell) ** 2)
         Veff = np.asarray(Veff)

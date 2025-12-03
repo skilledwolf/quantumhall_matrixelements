@@ -16,13 +16,13 @@ if TYPE_CHECKING:
     IntArray = NDArray[np.int64]
 
 def _analytic_form_factor(
-    n_row: "IntArray",
-    n_col: "IntArray",
-    q_magnitudes: "RealArray",
-    q_angles: "RealArray",
+    n_row: IntArray,
+    n_col: IntArray,
+    q_magnitudes: RealArray,
+    q_angles: RealArray,
     lB: float,
     sign_magneticfield: int = -1,
-) -> "ComplexArray":
+) -> ComplexArray:
     """Vectorized Landau level form factor F_{n_row, n_col}(q).
 
     F_{n',n}(q) = i^{|n-n'|} e^{i(n-n')θ}
@@ -44,7 +44,7 @@ def _analytic_form_factor(
 
     laguerre_poly = eval_genlaguerre(n_min, delta_n_abs, arg_z)
 
-    angles = -sign_magneticfield * (n_col - n_row) * q_angles + (np.pi / 2) * delta_n_abs 
+    angles = -sign_magneticfield * (n_col - n_row) * q_angles + (np.pi / 2) * delta_n_abs
     angular_phase = np.cos(angles) + 1j * np.sin(angles)
 
     F = (
@@ -57,12 +57,12 @@ def _analytic_form_factor(
     return F
 
 def get_form_factors(
-    q_magnitudes: "RealArray",
-    q_angles: "RealArray",
+    q_magnitudes: RealArray,
+    q_angles: RealArray,
     nmax: int,
     lB: float = 1.0,
     sign_magneticfield: int = -1,
-) -> "ComplexArray":
+) -> ComplexArray:
     """Precompute F_{n',n}(G) for all G and Landau levels.
 
     Parameters
@@ -84,6 +84,8 @@ def get_form_factors(
     F : (nG, nmax, nmax) complex array
         Plane-wave form factors F_{n',n}(G).
     """
+    if sign_magneticfield not in (1, -1):
+        raise ValueError("sign_magneticfield must be 1 or -1")
     n_indices = np.arange(nmax)
     F = _analytic_form_factor(
         n_row=n_indices[None, :, None],
@@ -96,8 +98,8 @@ def get_form_factors(
     # Just to be explicit, we apply the symmetry transformation explicitly here
     # but we could have also passed sign_magneticfield to _analytic_form_factor
     # --> same result
-    if sign_magneticfield == 1: 
-        F = get_form_factors_opposite_field(F) 
+    if sign_magneticfield == 1:
+        F = get_form_factors_opposite_field(F)
 
     return F
 

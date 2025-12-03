@@ -1,6 +1,8 @@
 import numpy as np
+
 from quantumhall_matrixelements import get_exchange_kernels
 from quantumhall_matrixelements.diagnostic import verify_exchange_kernel_symmetries
+
 
 def test_cross_backend_consistency():
     """
@@ -41,7 +43,7 @@ def test_large_n_consistency():
         Gs_dimless, thetas, nmax, method="hankel", sign_magneticfield=-1
     )
     
-    # At nmax=12, we expect ~1e-4 difference due to quadrature limits
+    # At nmax=12, differences up to ~3e-3 are acceptable due to quadrature limits
     assert np.allclose(X_gl, X_hk, rtol=3e-3, atol=3e-3), \
         "Mismatch at large nmax exceeded relaxed tolerance"
 
