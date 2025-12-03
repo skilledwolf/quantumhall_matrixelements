@@ -1,12 +1,14 @@
 """Exchange kernels via Hankel transforms."""
 from __future__ import annotations
 
-from functools import lru_cache
+from functools import cache
 from typing import TYPE_CHECKING
 
 import numpy as np
 from hankel import HankelTransform
 from scipy.special import genlaguerre, rgamma
+
+from .diagnostic import get_exchange_kernels_opposite_field
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -16,14 +18,12 @@ if TYPE_CHECKING:
 
 
 def _N_order(n1: int, m1: int, n2: int, m2: int) -> int:
-    return (n1 - m1) - (m2 - n2)
-
+    return ((n1 - m1) + (m2 - n2))
 
 def _parity_factor(N: int) -> int:
-    return (-1) ** ((N + abs(N)) // 2)
+    return (-1) ** ((N - abs(N)) // 2)
 
-
-@lru_cache(maxsize=None)
+@cache
 def _get_hankel_transformer(order: int) -> HankelTransform:
     """Cached HankelTransform instance for a given Bessel order."""
     return HankelTransform(nu=order, N=6000, h=7e-6)
@@ -72,18 +72,19 @@ def _radial_exchange_integrand_rgamma(
 
 
 def get_exchange_kernels_hankel(
-    G_magnitudes: "RealArray",
-    G_angles: "RealArray",
+    G_magnitudes: RealArray,
+    G_angles: RealArray,
     nmax: int,
     *,
     potential: str | callable = "coulomb",
     kappa: float = 1.0,
-) -> "ComplexArray":
+    sign_magneticfield: int = -1,
+) -> ComplexArray:
     """Compute X_{n1,m1,n2,m2}(G) via Hankel transforms (κ=1 convention).
 
     This backend parametrizes the radial integral via Hankel transforms with
     robust Laguerre-based normalization and explicit control over the Bessel
-    order. It is numerically more intensive than the Gauss–Laguerre backend
+    order. It is numerically more intensive than the Gauss–Legendre backend
     but can be useful for cross-checks or alternative potentials.
 
     Parameters
@@ -97,7 +98,15 @@ def get_exchange_kernels_hankel(
         the interaction in 1/ℓ units.
     kappa :
         Prefactor for Coulomb/constant cases.
+    sign_magneticfield :
+        Sign of the charge–field product σ = sgn(q B_z). ``-1`` matches the
+        package's internal convention; ``+1`` returns the kernels for the
+        opposite sign by applying the appropriate complex conjugation and
+        phase factors.
     """
+    if sign_magneticfield not in (1, -1):
+        raise ValueError("sign_magneticfield must be 1 or -1")
+
     G_magnitudes = np.asarray(G_magnitudes, dtype=float)
     G_angles = np.asarray(G_angles, dtype=float)
     if G_magnitudes.shape != G_angles.shape:
@@ -130,9 +139,10 @@ def get_exchange_kernels_hankel(
         phase = -N * G_angles
         phase_by_N[int(N)] = (np.cos(phase) + 1j * np.sin(phase)) * _parity_factor(int(N))
 
-    # Small lookup for internal (i)^(d1-d2), indexed by d1,d2 in [0..nmax-1]
+    # Small lookup for internal (i)^(d1+d2), indexed by d1,d2 in [0..nmax-1]
     d_vals = np.arange(nmax, dtype=int)
-    phase_internal_table = (1j) ** (d_vals[:, None] - d_vals[None, :])  # (nmax,nmax)
+    phase_internal_table = (1j) ** (d_vals[:, None] + d_vals[None, :])  # (nmax,nmax)
+
     d_lookup = np.abs(np.subtract.outer(np.arange(nmax), np.arange(nmax)))  # (nmax,nmax)
     # Precompute abs diffs (d) and mins (Nmin) for quick indexing
     d_mat = d_lookup  # alias
@@ -184,7 +194,13 @@ def get_exchange_kernels_hankel(
                     # Angular/internal phases
                     phase_internal = phase_internal_table[d1, d2]
                     phase_angle = phase_by_N[N]
-                    Xs[:, n1, m1, n2, m2] = phase_internal * phase_angle * X_radial
+                    extra_sgn = (-1)**(n2-m2)
+
+                    Xs[:, n1, m1, n2, m2] = phase_internal * phase_angle * X_radial * extra_sgn
+
+
+    if sign_magneticfield == 1:
+        Xs = get_exchange_kernels_opposite_field(Xs)
 
     return Xs
 

@@ -70,3 +70,17 @@ def test_form_factors_offdiag_scaling_power():
                 assert ratio < 10  # Loose upper bound; prevents wrong power
                 assert ratio > 1e-6  # Not numerically underflowed
 
+
+def test_sign_magneticfield_phase_relation():
+    nmax = 3
+    qs = np.array([0.5, 1.0])
+    thetas = np.array([0.1, 0.3])
+
+    F_neg = get_form_factors(qs, thetas, nmax, sign_magneticfield=-1)
+    F_pos = get_form_factors(qs, thetas, nmax, sign_magneticfield=+1)
+
+    idx = np.arange(nmax)
+    phase = np.where((idx[:, None] - idx[None, :]) % 2 == 0, 1.0, -1.0)
+
+    expected = np.conj(F_neg) * phase[None, :, :]
+    assert np.allclose(F_pos, expected)

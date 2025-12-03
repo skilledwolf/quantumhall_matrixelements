@@ -6,6 +6,8 @@ version: "0.1.0"
 doi: 10.5281/zenodo.17646158
 date-released: "2025-11-18"
 authors:
+  - family-names: Mishra
+    given-names: Sparsh
   - family-names: Wolf
     given-names: Tobias
 repository-code: "https://github.com/wolft/quantumhall_matrixelements"

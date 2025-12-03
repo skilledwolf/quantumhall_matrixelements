@@ -7,7 +7,8 @@ name = "quantumhall_matrixelements"
 description = "Landau-level plane-wave form factors and exchange kernels for quantum Hall systems."
 readme = "README.md"
 authors = [
-  { name = "Tobias Wolf", email = "public@wolft.xyz" }
+  { name = "Tobias Wolf", email = "public@wolft.xyz" },
+  { name = "Sparsh Mishra" }
 ]
 license = { text = "MIT" }
 requires-python = ">=3.10"

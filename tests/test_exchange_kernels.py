@@ -11,7 +11,7 @@ def test_exchange_kernel_basic_shape_and_real_N0():
     Gs_dimless = np.array([0.0, 1.0, 1.0])
     thetas = np.array([0.0, 0.0, np.pi])
 
-    X = get_exchange_kernels(Gs_dimless, thetas, nmax, method="gausslag")
+    X = get_exchange_kernels(Gs_dimless, thetas, nmax, method="gausslegendre")
     assert X.shape == (3, nmax, nmax, nmax, nmax)
 
     # N=0 sectors at G0 should be real (imag ~ 0)
@@ -35,3 +35,19 @@ def test_exchange_kernel_g_inversion_symmetry():
     # Will raise AssertionError if symmetry fails
     verify_exchange_kernel_symmetries(Gs_dimless, thetas, nmax, rtol=1e-6, atol=1e-8)
 
+
+def test_exchange_kernel_sign_magneticfield_phase_relation():
+    """sign_magneticfield=+1 should match the conjugation/phase relation of σ flip."""
+    nmax = 2
+    Gs_dimless = np.array([0.5])
+    thetas = np.array([0.25])
+
+    X_neg = get_exchange_kernels(Gs_dimless, thetas, nmax, method="gausslegendre", sign_magneticfield=-1)
+    X_pos = get_exchange_kernels(Gs_dimless, thetas, nmax, method="gausslegendre", sign_magneticfield=+1)
+
+    idx = np.arange(nmax)
+    phase = np.where((idx[:, None] - idx[None, :]) % 2 == 0, 1.0, -1.0)
+    phase = phase[:, :, None, None] * phase[None, None, :, :]
+
+    expected = np.conj(X_neg) * phase[None, ...]
+    assert np.allclose(X_pos, expected)

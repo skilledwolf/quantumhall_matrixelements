@@ -4,17 +4,18 @@
 
 Landau-level plane-wave form factors and exchange kernels for quantum Hall systems in a small, reusable package (useful for Hartree-Fock and related calculations). It provides:
 
-- Analytic Landau-level plane-wave form factors $F_{n',n}(\mathbf{q})$.
-- Exchange kernels $X_{n_1 m_1 n_2 m_2}(\mathbf{G})$. 
+- Analytic Landau-level plane-wave form factors $F_{n',n}^\sigma(\mathbf{q})$.
+- Exchange kernels $X_{n_1 m_1 n_2 m_2}^\sigma(\mathbf{G})$. 
 - Symmetry diagnostics for verifying kernel implementations. 
 
 ### Plane-Wave Landau-level Form Factors 
-The plane-wave matrix element $F_{n',n}(\mathbf{q}) = \langle n' | e^{i \mathbf{q} \cdot \mathbf{R}} | n \rangle$ can be written as
+For $\sigma = \mathrm{sgn}(qB_z)$, where $q$ is the charge of the carrier and $B_z$ is the magnetic field direction,
+The plane-wave matrix element $F^\sigma_{n',n}(\mathbf{q}) = \langle n' | e^{i \mathbf{q} \cdot \mathbf{R}_\sigma} | n \rangle$ can be written as
 
 $$
-F_{n',n}(\mathbf{q}) =
+F_{n',n}^\sigma(\mathbf{q}) =
 i^{|n-n'|}
-e^{i(n-n')\theta_{\mathbf{q}}}
+e^{i\sigma(n'-n)\theta_{\mathbf{q}}}
 \sqrt{\frac{n_{<}!}{n_{>}!}}
 \left( \frac{|\mathbf{q}|\ell_{B}}{\sqrt{2}} \right)^{|n-n'|}
 L_{n_<}^{|n-n'|}\left( \frac{|\mathbf{q}|^2 \ell_{B}^2}{2} \right)
@@ -26,7 +27,7 @@ where $n_< = \min(n, n')$, $n_> = \max(n, n')$, and $L_n^\alpha$ are the general
 ### Exchange Kernels
 
 
-$$ X_{n_1 m_1 n_2 m_2}(\mathbf{G}) = \int \frac{d^2 q}{(2\pi)^2} V(q) F_{m_1, n_1}(\mathbf{q}) F_{n_2, m_2}(-\mathbf{q}) e^{i (\mathbf{q} \times \mathbf{G})_z \ell_B^2} $$
+$$ X_{n_1 m_1 n_2 m_2}^\sigma(\mathbf{G}) = \int \frac{d^2 q}{(2\pi)^2} V(q) F_{m_1, n_1}^\sigma(\mathbf{q}) F_{n_2, m_2}^\sigma(-\mathbf{q}) e^{i\sigma (\mathbf{q} \times \mathbf{G})_z \ell_B^2} $$
 
 where $V(q)$ is the interaction potential. For the Coulomb interaction, $V(q) = \frac{2\pi e^2}{\epsilon q}$.
 
@@ -92,11 +93,25 @@ X_coulomb = get_exchange_kernels(
 
 For more detailed examples, see the example scripts under `examples/` and the tests under `tests/`.
 
+## Magnetic-field sign
+
+The public APIs expose a `sign_magneticfield` keyword that represents
+$\sigma = \mathrm{sgn}(q B_z)$, the sign of the charge–field product.
+The default `sign_magneticfield=-1` matches the package's internal convention
+(electrons in a positive $B_z$). Passing `sign_magneticfield=+1` returns the
+appropriate complex-conjugated form factors or exchange kernels for the
+opposite field direction without requiring any manual phase adjustments:
+
+```python
+F_plusB = get_form_factors(Gs_dimless, thetas, nmax, sign_magneticfield=+1)
+X_plusB = get_exchange_kernels(Gs_dimless, thetas, nmax, method="hankel", sign_magneticfield=+1)
+```
+
 ## Citation
 
 If you use the package `quantumhall-matrixelements` in academic work, you must cite:
 
-> Tobias Wolf, *quantumhall-matrixelements: Quantum Hall Landau-Level Matrix Elements*, version 0.1.0, 2025.  
+> Sparsh Mishra and Tobias Wolf, *quantumhall-matrixelements: Quantum Hall Landau-Level Matrix Elements*, version 0.1.0, 2025.  
 > DOI: https://doi.org/10.5281/zenodo.17646158
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17646158.svg)](https://doi.org/10.5281/zenodo.17646158)
@@ -105,25 +120,30 @@ A machine-readable `CITATION.cff` file is included in the repository and can be 
 
 ## Backends and Reliability
 
-The package provides three backends for computing exchange kernels, each with different performance and stability characteristics:
+The package provides two backends for computing exchange kernels:
 
-1.  **`gausslegendre` (Default)**:
-    -   **Method**: Gauss-Legendre quadrature mapped from $[-1, 1]$ to $[0, \infty)$ via a rational mapping.
-    -   **Pros**: Fast and numerically stable for all Landau level indices ($n$).
-    -   **Cons**: May require tuning `nquad` for extremely large momenta or indices ($n > 100$).
-    -   **Recommended for**: General usage, especially for large $n$ ($n \ge 10$).
+1. **`gausslegendre` (Default)**
+   - **Method**: Gauss-Legendre quadrature mapped from $[-1, 1]$ to $[0, \infty)$ via a rational mapping.
+   - **Pros**: Fast and numerically stable for all Landau-level indices ($n$).
+   - **Cons**: May require tuning `nquad` for extremely large momenta or indices ($n > 100$).
+   - **Recommended for**: General usage, especially for $n \ge 10$.
 
-2.  **`gausslag`**:
-    -   **Method**: Generalized Gauss-Laguerre quadrature.
-    -   **Pros**: Very fast for small $n$.
-    -   **Cons**: Numerically unstable for large $n$ ($n \ge 12$) due to high-order Laguerre polynomial roots.
-    -   **Recommended for**: Small systems ($n < 10$) where speed is critical.
+2. **`hankel`**
+   - **Method**: Discrete Hankel transform.
+   - **Pros**: High precision and stability.
+   - **Cons**: Significantly slower than quadrature methods.
+   - **Recommended for**: Reference calculations and verifying the Gauss–Legendre backend.
 
-3.  **`hankel`**:
-    -   **Method**: Discrete Hankel transform.
-    -   **Pros**: High precision and stability.
-    -   **Cons**: Significantly slower than quadrature methods.
-    -   **Recommended for**: Reference calculations and verifying other backends.
+## Notes
+The following wavefunction is used to find all matrix elements:
+
+$$
+\Psi_{nX}^\sigma(x,y)
+= \frac{e^{i\sigma X y \ell_B^{-2}}}{\sqrt{L_y}}i^n\,
+\phi_{n}(x -X),
+\qquad
+X = \sigma k_y \ell_B^{2}.
+$$
 
 ## Development
 
@@ -142,6 +162,6 @@ The package provides three backends for computing exchange kernels, each with di
 
 ## Authors and license
 
-- Author: Dr. Tobias Wolf
+- Authors: Dr. Tobias Wolf, Sparsh Mishra
 - Copyright © 2025 Tobias Wolf
 - License: MIT (see `LICENSE`).
