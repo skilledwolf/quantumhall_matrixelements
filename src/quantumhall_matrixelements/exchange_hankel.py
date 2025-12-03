@@ -18,11 +18,9 @@ if TYPE_CHECKING:
 
 
 def _N_order(n1: int, m1: int, n2: int, m2: int) -> int:
-    #return (n1 - m1) - (m2 - n2)
     return ((n1 - m1) + (m2 - n2))
 
 def _parity_factor(N: int) -> int:
-    #return (-1) ** ((N + abs(N)) // 2)
     return (-1) ** ((N - abs(N)) // 2)
 
 @lru_cache(maxsize=None)
@@ -141,9 +139,8 @@ def get_exchange_kernels_hankel(
         phase = -N * G_angles
         phase_by_N[int(N)] = (np.cos(phase) + 1j * np.sin(phase)) * _parity_factor(int(N))
 
-    # Small lookup for internal (i)^(d1-d2), indexed by d1,d2 in [0..nmax-1]
+    # Small lookup for internal (i)^(d1+d2), indexed by d1,d2 in [0..nmax-1]
     d_vals = np.arange(nmax, dtype=int)
-    #phase_internal_table = (1j) ** (d_vals[:, None] - d_vals[None, :])  # (nmax,nmax)
     phase_internal_table = (1j) ** (d_vals[:, None] + d_vals[None, :])  # (nmax,nmax)
 
     d_lookup = np.abs(np.subtract.outer(np.arange(nmax), np.arange(nmax)))  # (nmax,nmax)
@@ -197,7 +194,7 @@ def get_exchange_kernels_hankel(
                     # Angular/internal phases
                     phase_internal = phase_internal_table[d1, d2]
                     phase_angle = phase_by_N[N]
-                    extra_sgn = (-1)**(n2-m2) # CHANGED HERE NEGATIVE B FIELD  
+                    extra_sgn = (-1)**(n2-m2)
 
                     Xs[:, n1, m1, n2, m2] = phase_internal * phase_angle * X_radial * extra_sgn
 
