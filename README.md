@@ -133,6 +133,7 @@ The package provides two backends for computing exchange kernels:
    - **Pros**: High precision and stability.
    - **Cons**: Significantly slower than quadrature methods.
    - **Recommended for**: Reference calculations and verifying the Gauss–Legendre backend.
+
 ## Notes
 The following wavefunction used to find all matrix elements:
 
