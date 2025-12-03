@@ -3,7 +3,7 @@ message: "If you use this software, please cite it as below."
 type: software
 title: "quantumhall_matrixelements: Quantum Hall Landau-Level Matrix Elements"
 version: "0.1.0"
-doi: 10.5281/zenodo.17646158
+doi: 10.5281/zenodo.17807688
 date-released: "2025-11-18"
 authors:
   - family-names: Mishra
