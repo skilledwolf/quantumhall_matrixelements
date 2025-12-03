@@ -65,6 +65,9 @@ def get_exchange_kernels_GaussLegendre(
     # -----------------------------
     # 0. Input handling
     # -----------------------------
+    if sign_magneticfield not in (1, -1):
+        raise ValueError("sign_magneticfield must be 1 or -1")
+
     G_magnitudes = np.asarray(G_magnitudes, dtype=float)
     G_angles = np.asarray(G_angles, dtype=float)
     if G_magnitudes.shape != G_angles.shape:
