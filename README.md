@@ -96,7 +96,7 @@ For more detailed examples, see the example scripts under `examples/` and the te
 ## Magnetic-field sign
 
 The public APIs expose a `sign_magneticfield` keyword that represents
-$\sigma = \operatorname{sgn}(q B_z)$, the sign of the charge–field product.
+$\sigma = \mathrm{sgn}(q B_z)$, the sign of the charge–field product.
 The default `sign_magneticfield=-1` matches the package's internal convention
 (electrons in a positive $B_z$). Passing `sign_magneticfield=+1` returns the
 appropriate complex-conjugated form factors or exchange kernels for the
