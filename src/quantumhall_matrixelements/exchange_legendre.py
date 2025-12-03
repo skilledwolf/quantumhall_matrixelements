@@ -60,12 +60,13 @@ def get_exchange_kernels_GaussLegendre(
 
     Parameters
     ----------
-    G_magnitudes : array_like
-        Magnitudes |G| of the reciprocal lattice vectors. Shape determines
-        the output's leading dimension.
-    G_angles : array_like
-        Polar angles θ_G of the reciprocal lattice vectors in radians.
-        Must have the same shape as ``G_magnitudes``.
+    G_magnitudes : array_like of float
+        Magnitudes |G| of the reciprocal lattice vectors, convertible to a
+        NumPy array of floats. Shape determines the output's leading dimension.
+    G_angles : array_like of float
+        Polar angles θ_G of the reciprocal lattice vectors in radians,
+        convertible to a NumPy array of floats. Must have the same shape as
+        ``G_magnitudes``.
     nmax : int
         Number of Landau levels to include in the calculation. Output arrays
         will have dimensions ``(nG, nmax, nmax, nmax, nmax)``.
@@ -91,7 +92,7 @@ def get_exchange_kernels_GaussLegendre(
 
     Returns
     -------
-    ComplexArray
+    numpy.ndarray of numpy.complex128
         Exchange kernels with shape ``(nG, nmax, nmax, nmax, nmax)``, where
         ``nG`` is the number of G-vectors. The array element
         ``Xs[g, n1, m1, n2, m2]`` gives the exchange matrix element
@@ -102,7 +103,7 @@ def get_exchange_kernels_GaussLegendre(
     ValueError
         If ``G_magnitudes`` and ``G_angles`` have different shapes, if
         ``potential`` is not ``'coulomb'`` or a callable, or if a callable
-        potential returns an array with incorrect shape.
+        potential returns an array with shape different from ``(nquad,)``.
 
     Notes
     -----
