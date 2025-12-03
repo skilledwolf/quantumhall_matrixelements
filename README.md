@@ -135,6 +135,7 @@ The package provides two backends for computing exchange kernels:
    - **Recommended for**: Reference calculations and verifying the Gauss–Legendre backend.
 ## Notes
 The following wavefunction used to find all matrix elements:
+
 $$
 \Psi_{nX}^\sigma(x,y)
 = \frac{e^{i\sigma X y \ell_B^{-2}}}{\sqrt{L_y}}i^n\,
@@ -142,6 +143,7 @@ $$
 \qquad
 X = \sigma k_y \ell_B^{2}.
 $$
+
 ## Development
 
 - Run tests and coverage:
