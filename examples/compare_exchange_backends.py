@@ -1,8 +1,8 @@
-"""Compare Gauss–Laguerre and Hankel exchange-kernel backends.
+"""Compare Gauss–Legendre and Hankel exchange-kernel backends.
 
 For a small |G|ℓ_B grid and nmax=2, this script computes the exchange
-kernels using both the Gauss–Laguerre and Hankel backends and plots the
-relative difference of a representative diagonal element X_{0000}(G).
+kernels using both the Gauss–Legendre (default) and Hankel backends and plots
+the relative difference of a representative diagonal element X_{0000}(G).
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def main() -> None:
     q = np.linspace(0.2, 20.0, 60)
     theta = np.zeros_like(q)
 
-    X_gl = get_exchange_kernels(q, theta, nmax, method="gausslag")
+    X_gl = get_exchange_kernels(q, theta, nmax, method="gausslegendre")
     X_hk = get_exchange_kernels(q, theta, nmax, method="hankel")
 
     # Focus on X_{0000}(G) as a simple representative component
@@ -32,7 +32,7 @@ def main() -> None:
     ax.plot(q, rel_diff, marker="o", linestyle="-")
     ax.set_xlabel(r"$|G| \ell_B$")
     ax.set_ylabel(r"relative difference")
-    ax.set_title(r"Relative difference of $X_{0000}(G)$: Gauss–Laguerre vs Hankel")
+    ax.set_title(r"Relative difference of $X_{0000}(G)$: Gauss–Legendre vs Hankel")
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     plt.show()
@@ -40,4 +40,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

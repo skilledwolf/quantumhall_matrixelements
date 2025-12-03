@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.special import eval_genlaguerre, gammaln
 
+from .diagnostic import get_form_factors_opposite_field
+
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
@@ -13,14 +15,13 @@ if TYPE_CHECKING:
     RealArray = NDArray[np.float64]
     IntArray = NDArray[np.int64]
 
-
 def _analytic_form_factor(
     n_row: "IntArray",
     n_col: "IntArray",
     q_magnitudes: "RealArray",
     q_angles: "RealArray",
     lB: float,
-    sigma: int = -1,
+    sign_magneticfield: int = -1,
 ) -> "ComplexArray":
     """Vectorized Landau level form factor F_{n_row, n_col}(q).
 
@@ -29,8 +30,8 @@ def _analytic_form_factor(
                   L_{n_min}^{|n'-n|}(|q|²ℓ²/2) e^{-|q|²ℓ²/4}
     """
 
-    if sigma not in (1, -1):
-        raise ValueError("sigma must be 1 or -1")
+    if sign_magneticfield not in (1, -1):
+        raise ValueError("sign_magneticfield must be 1 or -1")
     n_min = np.minimum(n_row, n_col)
     n_max = np.maximum(n_row, n_col)
     delta_n_abs = np.abs(n_row - n_col)
@@ -43,11 +44,7 @@ def _analytic_form_factor(
 
     laguerre_poly = eval_genlaguerre(n_min, delta_n_abs, arg_z)
 
-    # Phase convention: F_{n',n}(q) ∝ i^{|Δn|} e^{i (n - n') θ}
-    angles = (n_col - n_row) * q_angles + (np.pi / 2) * delta_n_abs #here
-
-    
-
+    angles = -sign_magneticfield * (n_col - n_row) * q_angles + (np.pi / 2) * delta_n_abs 
     angular_phase = np.cos(angles) + 1j * np.sin(angles)
 
     F = (
@@ -57,16 +54,14 @@ def _analytic_form_factor(
         * laguerre_poly
         * np.exp(-0.5 * arg_z)
     )
-    if sigma == -1:
-        return F
-
-    idx = np.arange(F.shape[-1])
-    diff = idx[:, None] - idx[None, :]
-    phase = np.where((diff % 2) == 0, 1.0, -1.0)
-    return np.conj(F) * phase
+    return F
 
 def get_form_factors(
-    q_magnitudes: "RealArray", q_angles: "RealArray", nmax: int, lB: float = 1.0,sigma:int=-1
+    q_magnitudes: "RealArray",
+    q_angles: "RealArray",
+    nmax: int,
+    lB: float = 1.0,
+    sign_magneticfield: int = -1,
 ) -> "ComplexArray":
     """Precompute F_{n',n}(G) for all G and Landau levels.
 
@@ -79,6 +74,10 @@ def get_form_factors(
     lB :
         Magnetic length ℓ_B (default 1.0). ``q_magnitudes`` are understood
         to be in units of 1/ℓ_B.
+    sign_magneticfield :
+        Sign of the charge–field product σ = sgn(q B_z). Use ``-1`` for the
+        electron/positive-B convention used internally; ``+1`` returns the
+        complex-conjugated form factors with the appropriate phase flip.
 
     Returns
     -------
@@ -86,14 +85,21 @@ def get_form_factors(
         Plane-wave form factors F_{n',n}(G).
     """
     n_indices = np.arange(nmax)
-    return _analytic_form_factor(
+    F = _analytic_form_factor(
         n_row=n_indices[None, :, None],
         n_col=n_indices[None, None, :],
         q_magnitudes=np.asarray(q_magnitudes)[:, None, None],
         q_angles=np.asarray(q_angles)[:, None, None],
-        lB=lB,
-        sigma=sigma,
+        lB=lB
     ).astype(np.complex128)
+
+    # Just to be explicit, we apply the symmetry transformation explicitly here
+    # but we could have also passed sign_magneticfield to _analytic_form_factor
+    # --> same result
+    if sign_magneticfield == 1: 
+        F = get_form_factors_opposite_field(F) 
+
+    return F
 
 
 __all__ = ["get_form_factors"]

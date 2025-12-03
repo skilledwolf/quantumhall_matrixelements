@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 from importlib.metadata import PackageNotFoundError, version as _metadata_version
 
+from .diagnostic import get_form_factors_opposite_field, get_exchange_kernels_opposite_field
 from .planewave import get_form_factors
-from .exchange_gausslag import get_exchange_kernels_GaussLag
 from .exchange_hankel import get_exchange_kernels_hankel
 from .exchange_legendre import get_exchange_kernels_GaussLegendre
 
@@ -49,12 +49,12 @@ def get_exchange_kernels(
 
         - ``'gausslegendre'`` (default): Gauss-Legendre quadrature with rational mapping.
           Recommended for all nmax.
-        - ``'gausslag'``: generalized Gauss–Laguerre quadrature.
-          Fast for small nmax (< 10), but unstable for large nmax.
         - ``'hankel'``: Hankel-transform based implementation.
 
     **kwargs :
         Additional arguments passed to the backend (e.g. ``nquad``, ``scale``).
+        Common keywords include ``sign_magneticfield`` (±1) to select the
+        magnetic-field orientation convention.
 
     Notes
     -----
@@ -62,13 +62,11 @@ def get_exchange_kernels(
     physical interaction strength should be applied by the caller.
     """
     chosen = (method or "gausslegendre").strip().lower()
-    if chosen in {"gausslag", "gauss-lag", "gausslaguerre", "gauss-laguerre", "gl"}:
-        return get_exchange_kernels_GaussLag(G_magnitudes, G_angles, nmax, **kwargs)
     if chosen in {"hankel", "hk"}:
         return get_exchange_kernels_hankel(G_magnitudes, G_angles, nmax, **kwargs)
     if chosen in {"gausslegendre", "gauss-legendre", "legendre", "leg"}:
         return get_exchange_kernels_GaussLegendre(G_magnitudes, G_angles, nmax, **kwargs)
-    raise ValueError(f"Unknown exchange-kernel method: {method!r}. Use 'gausslegendre', 'gausslag', or 'hankel'.")
+    raise ValueError(f"Unknown exchange-kernel method: {method!r}. Use 'gausslegendre' or 'hankel'.")
 
 
 try:
@@ -81,7 +79,6 @@ except PackageNotFoundError:  # pragma: no cover - fallback for local, non-insta
 __all__ = [
     "get_form_factors",
     "get_exchange_kernels",
-    "get_exchange_kernels_GaussLag",
     "get_exchange_kernels_hankel",
     "get_exchange_kernels_GaussLegendre",
     "__version__",

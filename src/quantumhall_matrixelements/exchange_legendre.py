@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import scipy.special as sps
+
 from scipy.special import roots_legendre
 
 if TYPE_CHECKING:
@@ -14,32 +15,16 @@ if TYPE_CHECKING:
     ComplexArray = NDArray[np.complex128]
     RealArray = NDArray[np.float64]
 
-
-def _N_order(n1: int, m1: int, n2: int, m2: int) -> int:
-    #return (n1 - m1) - (m2 - n2)# change here 
-    return ((n1 - m1) + (m2 - n2))
+from .diagnostic import get_exchange_kernels_opposite_field
 
 
 def _parity_factor(N: int) -> int:
-    #"""(-1)^((N+|N|)/2) → (-1)^N for N>=0, and 1 for N<0."""
-    """(-1)^((N-|N|)/2) → (-1)^N for N<=0, and 1 for N>0."""# CHANGE HERE NEGATIVE B FIELD
-    #return (-1) ** ((N + abs(N)) // 2) # change here
-    return (-1) ** ((N - abs(N)) // 2) # CHANGE HERE NEGATIVE B FIELD
-
+    """(-1)^((N-|N|)/2) → (-1)^N for N<0, and 1 for N>=0."""
+    return (-1) ** ((N - abs(N)) // 2) 
 
 @lru_cache(maxsize=None)
 def _logfact(n: int) -> float:
     return float(sps.gammaln(n + 1))
-
-
-def _C_and_indices(n1: int, m1: int, n2: int, m2: int):
-    """Constants and Laguerre parameters for f_{n1,m1} * f_{m2,n2}."""
-    p, d1 = min(n1, m1), abs(n1 - m1)
-    q, d2 = min(m2, n2), abs(m2 - n2)
-    logC = 0.5 * ((_logfact(p) - _logfact(p + d1)) + (_logfact(q) - _logfact(q + d2)))
-    C = np.exp(logC)
-    return C, p, d1, q, d2
-
 
 @lru_cache(maxsize=None)
 def _legendre_nodes_weights_mapped(nquad: int, scale: float):
@@ -54,7 +39,6 @@ def _legendre_nodes_weights_mapped(nquad: int, scale: float):
     w = w_leg * (scale * 2.0 / (denom * denom))
     return z, w
 
-
 def get_exchange_kernels_GaussLegendre(
     G_magnitudes,
     G_angles,
@@ -62,53 +46,34 @@ def get_exchange_kernels_GaussLegendre(
     *,
     potential: str | callable = "coulomb",
     kappa: float = 1.0,
-    nquad: int = 1000,
+    nquad: int = 8000,
     scale: float = 0.5,
     ell: float = 1.0,
-    sigma: int = -1,
+    sign_magneticfield: int = -1,
 ) -> "ComplexArray":
     """Compute X_{n1,m1,n2,m2}(G) using Gauss-Legendre quadrature with rational mapping.
 
-    This backend maps the semi-infinite radial integral to the finite interval [-1, 1]
-    using the rational mapping z = scale * (1+x)/(1-x). It avoids the numerical instability
-    of Gauss-Laguerre quadrature for large quantum numbers while remaining faster than
-    Hankel transforms.
-
-    Parameters
-    ----------
-    G_magnitudes, G_angles :
-        Arrays of the same shape describing |G| and polar angle θ_G.
-    nmax :
-        Number of Landau levels.
-    potential :
-        ``'coulomb'`` (default) or a callable ``V(q)`` returning the interaction.
-    kappa :
-        Interaction strength prefactor.
-    nquad :
-        Number of quadrature points (default 1000).
-    scale :
-        Mapping scale factor (default 0.5). Controls the distribution of points.
-        Smaller values cluster points near the peak of the integrand for large n.
-    ell :
-        Magnetic length ℓ_B (default 1.0).
-
-    Returns
-    -------
-    Xs : (nG, nmax, nmax, nmax, nmax) complex array
+    Optimizations:
+    - Precompute Laguerre polynomials L_p^d(z) once.
+    - Precompute z^alpha for all possible d1+d2.
+    - Group quadruples by Bessel order N and evaluate integrals in big batches.
+    - Use index-exchange symmetry (valid for any V(q)):
+        X[m2,n2,m1,n1] = (-1)**((n1 - m1) - (n2 - m2)) * X[n1,m1,n2,m2]
+      but *without* any extra O(nmax^4) loops – we fill the partner inside the N-loop.
     """
-    if sigma not in (1, -1):
-        raise ValueError("sigma must be 1 or -1")
-    
+
+    # -----------------------------
+    # 0. Input handling
+    # -----------------------------
     G_magnitudes = np.asarray(G_magnitudes, dtype=float)
     G_angles = np.asarray(G_angles, dtype=float)
     if G_magnitudes.shape != G_angles.shape:
         raise ValueError("G_magnitudes and G_angles must have the same shape.")
     nG = G_magnitudes.size
 
-    Gscaled = G_magnitudes * float(ell)
-    Xs = np.zeros((nG, nmax, nmax, nmax, nmax), dtype=np.complex128)
-
-    # Resolve potential
+    # -----------------------------
+    # 1. Potential choice
+    # -----------------------------
     if callable(potential):
         pot_kind = "callable"
         pot_fn = potential
@@ -116,117 +81,211 @@ def get_exchange_kernels_GaussLegendre(
         pot_kind = str(potential).strip().lower()
         pot_fn = None
 
-    if pot_kind == "coulomb":
-        pass
-    elif pot_kind == "callable":
-        pass
-    else:
+    if pot_kind not in ("coulomb", "callable"):
         raise ValueError("potential must be 'coulomb' or a callable V(q).")
+    is_coulomb = (pot_kind == "coulomb")
 
-    # Get mapped grid
+    # -----------------------------
+    # 2. Quadrature grid and z-dependent stuff
+    # -----------------------------
     z, w = _legendre_nodes_weights_mapped(nquad, scale)
+    z = np.asarray(z, dtype=np.float64)
+    w = np.asarray(w, dtype=np.float64)
 
-    # Precompute Bessel functions J_N(sqrt(2z)*G)
-    # We cache by absN to avoid recomputing
-    J_cache: dict[int, np.ndarray] = {}
+    exp_minus_z = np.exp(-z)               # (nquad,)
+    sqrt2z = np.sqrt(2.0 * z)              # (nquad,)
 
-    # Cache for Laguerre evaluations
-    # We evaluate L_n^d(z) for many n, d.
-    # Since n, d are small integers, we can just compute on the fly or use sps.eval_genlaguerre
-    # sps.eval_genlaguerre is efficient enough.
+    # Bessel argument (shared for all orders)
+    Gscaled = G_magnitudes * float(ell)    # (nG,)
+    arg = Gscaled[:, None] * sqrt2z[None, :]  # (nG, nquad)
 
+    # Callable potential: evaluated once on the quadrature grid
+    if is_coulomb:
+        Veff = None
+    else:
+        qvals = sqrt2z / float(ell)        # (nquad,)
+        Veff = pot_fn(qvals) / (2.0 * np.pi * float(ell) ** 2)
+        Veff = np.asarray(Veff)
+        if Veff.shape != z.shape:
+            raise ValueError("Callable potential must return array of shape (nquad,)")
+
+    # -----------------------------
+    # 3. Per-(n,m) combinatorics
+    # -----------------------------
+    idx = np.arange(nmax, dtype=int)
+    n_idx, m_idx = np.meshgrid(idx, idx, indexing="ij")
+
+    # p = min(n,m), d = |n-m|, D = n-m
+    p_nm = np.minimum(n_idx, m_idx)
+    d_nm = np.abs(n_idx - m_idx)
+    D_nm = n_idx - m_idx
+
+    # (-1)^(n-m) done via parity bits (no pow on negatives)
+    extra_sign_nm = 1 - 2 * ((n_idx - m_idx) & 1)  # shape (nmax, nmax)
+
+    # C_nm[n,m] = sqrt(p! / (p + d)!)
+    C_nm = np.empty((nmax, nmax), dtype=np.float64)
+    for n in range(nmax):
+        for m in range(nmax):
+            p = int(p_nm[n, m])
+            d = int(d_nm[n, m])
+            logC = 0.5 * (_logfact(p) - _logfact(p + d))
+            C_nm[n, m] = np.exp(logC)
+
+    # -----------------------------
+    # 4. Laguerre polynomials L_p^d(z) cached by (p,d)
+    # -----------------------------
+    laguerre_cache: dict[tuple[int, int], np.ndarray] = {}
+    L_nm = np.empty((nmax, nmax), dtype=object)
+    for n in range(nmax):
+        for m in range(nmax):
+            p = int(p_nm[n, m])
+            d = int(d_nm[n, m])
+            key = (p, d)
+            if key not in laguerre_cache:
+                laguerre_cache[key] = sps.eval_genlaguerre(p, d, z)
+            L_nm[n, m] = laguerre_cache[key]
+
+    # -----------------------------
+    # 5. Powers z^alpha for all possible d1 + d2
+    # -----------------------------
+    max_d_sum = 2 * (nmax - 1)
+    z_pows: list[np.ndarray] = []
+    if is_coulomb:
+        # alpha = (d1 + d2 - 1) / 2
+        for ds in range(max_d_sum + 1):
+            alpha = 0.5 * (ds - 1)
+            z_pows.append(z ** alpha)
+    else:
+        # alpha = (d1 + d2) / 2
+        for ds in range(max_d_sum + 1):
+            alpha = 0.5 * ds
+            z_pows.append(z ** alpha)
+
+    # -----------------------------
+    # 6. N-related: parity, plane-wave phase, Bessel cache
+    # -----------------------------
+    maxD = 2 * (nmax - 1)
+    Ns = np.arange(-maxD, maxD + 1, dtype=int)
+    minN = Ns[0]
+
+    parity = np.array([_parity_factor(int(N)) for N in Ns], dtype=int)
+    phase_table = np.exp(-1j * Ns[:, None] * G_angles[None, :])  # (2*maxD+1, nG)
+
+    # (1j)^(d1 + d2) for all possible sums
+    phase_power = np.array([1j ** k for k in range(max_d_sum + 1)], dtype=np.complex128)
+
+    # Group quadruples by N, but only for canonical pairs (n1,m1) <= (m2,n2)
+    buckets: dict[int, list[tuple[int, int, int, int]]] = {int(N): [] for N in Ns}
     for n1 in range(nmax):
         for m1 in range(nmax):
+            D1 = D_nm[n1, m1]
+            pair1 = n1 * nmax + m1          # "pair" index for (n1,m1)
             for n2 in range(nmax):
                 for m2 in range(nmax):
-                    N = _N_order(n1, m1, n2, m2)
-                    absN = abs(N)
-                    C, p, d1, q, d2 = _C_and_indices(n1, m1, n2, m2)
+                    pair2 = m2 * nmax + n2  # "pair" index for (m2,n2)
+                    if pair1 > pair2:
+                        # Non-canonical representative; its partner will be filled by symmetry
+                        continue
+                    # second physical pair is (m2, n2)
+                    D2 = D_nm[m2, n2]       # (m2 - n2)
+                    # N = (n1 - m1) + (m2 - n2) = D1 + D2
+                    N = int(D1 + D2)
+                    buckets[N].append((n1, m1, n2, m2))
 
-                    # Compute radial integral
-                    if potential == "coulomb":
-                        # Integrand factor: exp(-z) * z^alpha * L * L * J
-                        # alpha = (d1 + d2 - 1) / 2
-                        alpha = 0.5 * (d1 + d2 - 1)
+    # Bessel J_|N|(arg) cache
+    J_cache: dict[int, np.ndarray] = {}
 
-                        L1 = sps.eval_genlaguerre(p, d1, z)
-                        L2 = sps.eval_genlaguerre(q, d2, z)
-                        
-                        # Bessel part
-                        if absN not in J_cache:
-                            arg = np.sqrt(2.0 * z)[None, :] * Gscaled[:, None]
-                            J_cache[absN] = sps.jv(absN, arg)
-                        J_abs = J_cache[absN]
-                        
-                        # Full integrand term (excluding J and weights)
-                        # exp(-z) handles x->1 decay
-                        # z^alpha handles x->-1 behavior
-                        term = np.exp(-z) * (z**alpha) * L1 * L2
-                        
-                        # Sum over quadrature points
-                        # J_abs is (nG, nquad), term is (nquad,), w is (nquad,)
-                        # Result is (nG,)
-                        radial = (J_abs * term) @ w
-                        
-                        signN = _parity_factor(N)
+    # Output array
+    Xs = np.zeros((nG, nmax, nmax, nmax, nmax), dtype=np.complex128)
+    sqrt2 = np.sqrt(2.0)
 
-                        #phase_factor = (1j) ** (d1 - d2) ## changed here
-                        phase_factor = (1j) ** (d1 + d2)  #CHANGE HERE NEGATIVE B FIELD 
-                        pref = (kappa * C / np.sqrt(2.0)) * phase_factor
-                        
-                    else:
-                        # General/callable potential
-                        alpha = 0.5 * (d1 + d2)
-                        L1 = sps.eval_genlaguerre(p, d1, z)
-                        L2 = sps.eval_genlaguerre(q, d2, z)
-                        
-                        qvals = np.sqrt(2.0 * z) / float(ell)
-                        Veff = pot_fn(qvals) / (2.0 * np.pi * float(ell) ** 2)
-                        
-                        if absN not in J_cache:
-                            arg = np.sqrt(2.0 * z)[None, :] * Gscaled[:, None]
-                            J_cache[absN] = sps.jv(absN, arg)
-                        J_abs = J_cache[absN]
-                        
-                        term = np.exp(-z) * (z**alpha) * L1 * L2 * Veff
-                        radial = (J_abs * term) @ w
-                        
-                        signN = _parity_factor(N)
-                        #phase_factor = (1j) ** (d1 - d2) ## changed here
-                        phase_factor = (1j) ** (d1 + d2) # CHANGED HERE NEGATIVE B FIELD 
-                        pref = C * phase_factor
+    # -----------------------------
+    # 7. Main loop over N buckets
+    # -----------------------------
+    for N in Ns:
+        quad_list = buckets[int(N)]
+        if not quad_list:
+            continue
 
-                    phase = np.exp(-1j * N * G_angles) #CHANGED HERE NEGATIVE B FIELD 
-                    #phase = np.exp(1j * N * G_angles)
+        absN = abs(int(N))
+        if absN not in J_cache:
+            J_cache[absN] = sps.jv(absN, arg)  # (nG, nquad)
+        J_abs = J_cache[absN]
 
-                    extra_sgn = (-1)**(n2-m2) # CHANGED HERE NEGATIVE B FIELD  
+        N_idx = int(N - minN)
+        signN = parity[N_idx]
+        phase_N = phase_table[N_idx]          # (nG,)
 
-                    Xs[:, n1, m1, n2, m2] = (pref * phase) * (signN * radial) * extra_sgn # CHANGED HERE NEGATIVE B FIELD
+        terms = []        # list of (nquad,) arrays
+        coeffs = []       # scalar prefactors
+        extra_sgns = []   # (-1)^{n2 - m2}
+        quads = []        # store quadruples in this bucket
 
-    if sigma == -1: #matching convention in package
-        return Xs
-    else: # sigma == 1, apply phase factor for positive B field
-        idx = np.arange(Xs.shape[1])
-        phase = np.where((idx[:, None] - idx[None, :]) % 2 == 0, 1.0, -1.0)
-        phase = phase[:, :, None, None] * phase[None, None, :, :]
-        return np.conj(Xs) * phase
+        for (n1, m1, n2, m2) in quad_list:
+            # d1,d2 and Laguerres for first pair (n1,m1) and second phys. pair (m2,n2)
+            d1 = int(d_nm[n1, m1])
+            d2 = int(d_nm[m2, n2])
+            ds = d1 + d2
+
+            L1 = L_nm[n1, m1]
+            L2 = L_nm[m2, n2]
+            z_alpha = z_pows[ds]
+
+            if is_coulomb:
+                term = exp_minus_z * z_alpha * L1 * L2
+            else:
+                term = exp_minus_z * z_alpha * L1 * L2 * Veff
+            terms.append(term)
+
+            C1 = C_nm[n1, m1]
+            C2 = C_nm[m2, n2]
+            phase_factor = phase_power[ds]
+
+            if is_coulomb:
+                pref = (kappa * C1 * C2 / sqrt2) * phase_factor
+            else:
+                pref = (C1 * C2) * phase_factor
+
+            coeffs.append(pref)
+            # extra sign is (-1)^(n2 - m2)
+            extra_sgns.append(extra_sign_nm[n2, m2])
+            quads.append((n1, m1, n2, m2))
+
+        if not terms:
+            continue
+
+        # Stack into a single matrix: T has shape (nquad, nQ_N)
+        T = np.stack(terms, axis=1)                 # (nquad, nQ_N)
+        # big batched integral: (nG, nquad) @ (nquad, nQ_N) -> (nG, nQ_N)
+        radial_all = (J_abs * w[None, :]) @ T       # (nG, nQ_N)
+
+        coeffs = np.asarray(coeffs, dtype=np.complex128)       # (nQ_N,)
+        extra_sgns = np.asarray(extra_sgns, dtype=np.int8)     # (nQ_N,)
+        scalar_all = coeffs * extra_sgns * signN               # (nQ_N,)
+
+        # tmp[:, q] = phase_N * scalar_all[q] * radial_all[:, q]
+        tmp = phase_N[:, None] * radial_all * scalar_all[None, :]  # (nG, nQ_N)
+
+        # Scatter into Xs, and fill symmetric partner on the fly
+        for iq, (n1, m1, n2, m2) in enumerate(quads):
+            val = tmp[:, iq]
+            Xs[:, n1, m1, n2, m2] = val
+
+            # symmetric partner: (m2, n2, m1, n1)
+            pair1 = n1 * nmax + m1
+            pair2 = m2 * nmax + n2
+            if pair1 < pair2:
+                # sign = (-1)**((n1 - m1) - (n2 - m2)) via parity bits
+                delta = (n1 - m1) - (n2 - m2)
+                sign = 1 if (delta & 1) == 0 else -1
+                Xs[:, m2, n2, m1, n1] = sign * val
+
+    if sign_magneticfield == 1:
+        Xs = get_exchange_kernels_opposite_field(Xs)
+
+    return Xs
+
 
 
 __all__ = ["get_exchange_kernels_GaussLegendre"]
-
-"""
-Suggestion for changes:
-Add a B field direction option. -ve one just requires complex conjugate and sign factor
-
-X^+_{n1,m1,n2,m2}(G) = (X^-_{n1,m1,n2,m2}(G))^* (-1)**(i - j + l - k)
-
-F^+_{n',n}(q) = (F^-_{n',n}(q))^* (-1)**(n' - n)
-
-Allan's code = -ve magnetic field 
-This package = +ve magnetic field
-
-Could add the actual wavefunction, hamiltonian and creation and 
-annihilation operators in the Readme so that its clear what the convention is for 
-either magnetic fields 
-
-"""

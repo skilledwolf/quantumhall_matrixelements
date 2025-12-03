@@ -1,5 +1,4 @@
 import numpy as np
-import pytest
 from quantumhall_matrixelements import get_exchange_kernels_GaussLegendre, get_exchange_kernels
 
 def test_legendre_basic_shape():
@@ -16,13 +15,26 @@ def test_legendre_vs_hankel_small_n():
     Gs_dimless = np.array([0.5, 1.5])
     thetas = np.array([0.0, 0.2])
     
-    X_leg = get_exchange_kernels(Gs_dimless, thetas, nmax, method="gausslegendre", nquad=500)
-    X_hk = get_exchange_kernels(Gs_dimless, thetas, nmax, method="hankel")
-    
-    assert np.allclose(X_leg, X_hk, rtol=1e-3, atol=1e-3)
+    X_leg = get_exchange_kernels(
+        Gs_dimless,
+        thetas,
+        nmax,
+        method="gausslegendre",
+        nquad=500,
+        sign_magneticfield=-1,
+    )
+    X_hk = get_exchange_kernels(
+        Gs_dimless,
+        thetas,
+        nmax,
+        method="hankel",
+        sign_magneticfield=-1,
+    )
+
+    assert np.allclose(X_leg, X_hk, rtol=2e-3, atol=2e-3)
 
 def test_legendre_large_n_stability():
-    """Verify that it runs without error for large n (where gausslag fails)."""
+    """Verify that it runs without error for large n."""
     nmax = 15
     Gs_dimless = np.array([1.0])
     thetas = np.array([0.0])

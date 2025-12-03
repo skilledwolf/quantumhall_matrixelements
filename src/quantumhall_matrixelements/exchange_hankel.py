@@ -8,6 +8,8 @@ import numpy as np
 from hankel import HankelTransform
 from scipy.special import genlaguerre, rgamma
 
+from .diagnostic import get_exchange_kernels_opposite_field
+
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
@@ -78,13 +80,13 @@ def get_exchange_kernels_hankel(
     *,
     potential: str | callable = "coulomb",
     kappa: float = 1.0,
-    sigma:int =1,
+    sign_magneticfield: int = -1,
 ) -> "ComplexArray":
     """Compute X_{n1,m1,n2,m2}(G) via Hankel transforms (κ=1 convention).
 
     This backend parametrizes the radial integral via Hankel transforms with
     robust Laguerre-based normalization and explicit control over the Bessel
-    order. It is numerically more intensive than the Gauss–Laguerre backend
+    order. It is numerically more intensive than the Gauss–Legendre backend
     but can be useful for cross-checks or alternative potentials.
 
     Parameters
@@ -98,9 +100,14 @@ def get_exchange_kernels_hankel(
         the interaction in 1/ℓ units.
     kappa :
         Prefactor for Coulomb/constant cases.
+    sign_magneticfield :
+        Sign of the charge–field product σ = sgn(q B_z). ``-1`` matches the
+        package's internal convention; ``+1`` returns the kernels for the
+        opposite sign by applying the appropriate complex conjugation and
+        phase factors.
     """
-    if sigma not in (1, -1):
-        raise ValueError("sigma must be 1 or -1")
+    if sign_magneticfield not in (1, -1):
+        raise ValueError("sign_magneticfield must be 1 or -1")
 
     G_magnitudes = np.asarray(G_magnitudes, dtype=float)
     G_angles = np.asarray(G_angles, dtype=float)
@@ -195,13 +202,10 @@ def get_exchange_kernels_hankel(
                     Xs[:, n1, m1, n2, m2] = phase_internal * phase_angle * X_radial * extra_sgn
 
 
-    if sigma == -1: #matching convention in package
-        return Xs
-    else: # sigma == 1, apply phase factor for positive B field
-        idx = np.arange(Xs.shape[1])
-        phase = np.where((idx[:, None] - idx[None, :]) % 2 == 0, 1.0, -1.0)
-        phase = phase[:, :, None, None] * phase[None, None, :, :]
-        return np.conj(Xs) * phase
+    if sign_magneticfield == 1:
+        Xs = get_exchange_kernels_opposite_field(Xs)
+
+    return Xs
 
 
 __all__ = ["get_exchange_kernels_hankel"]
