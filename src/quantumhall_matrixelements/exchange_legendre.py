@@ -51,15 +51,71 @@ def get_exchange_kernels_GaussLegendre(
     ell: float = 1.0,
     sign_magneticfield: int = -1,
 ) -> "ComplexArray":
-    """Compute X_{n1,m1,n2,m2}(G) using Gauss-Legendre quadrature with rational mapping.
+    """Compute exchange kernels X_{n1,m1,n2,m2}(G) using Gauss-Legendre quadrature.
 
-    Optimizations:
-    - Precompute Laguerre polynomials L_p^d(z) once.
-    - Precompute z^alpha for all possible d1+d2.
-    - Group quadruples by Bessel order N and evaluate integrals in big batches.
-    - Use index-exchange symmetry (valid for any V(q)):
-        X[m2,n2,m1,n1] = (-1)**((n1 - m1) - (n2 - m2)) * X[n1,m1,n2,m2]
-      but *without* any extra O(nmax^4) loops – we fill the partner inside the N-loop.
+    This function evaluates the exchange matrix elements for a 2D electron gas
+    in a magnetic field, using Gauss-Legendre quadrature with a rational mapping
+    from [-1, 1] to [0, ∞). The implementation exploits index-exchange symmetry
+    to reduce computation time.
+
+    Parameters
+    ----------
+    G_magnitudes : array_like of float
+        Magnitudes |G| of the reciprocal lattice vectors, convertible to a
+        NumPy array of floats. Shape determines the output's leading dimension.
+    G_angles : array_like of float
+        Polar angles θ_G of the reciprocal lattice vectors in radians,
+        convertible to a NumPy array of floats. Must have the same shape as
+        ``G_magnitudes``.
+    nmax : int
+        Number of Landau levels to include in the calculation. Output arrays
+        will have dimensions ``(nG, nmax, nmax, nmax, nmax)``.
+    potential : str or callable, optional
+        Interaction potential. Use ``'coulomb'`` (default) for Coulomb
+        interaction, or provide a callable ``V(q)`` that takes momentum
+        magnitude (in units of 1/ℓ) and returns the interaction strength.
+    kappa : float, optional
+        Prefactor for the Coulomb potential. Default is 1.0.
+    nquad : int, optional
+        Number of quadrature points for the Gauss-Legendre integration.
+        Default is 8000. Higher values improve accuracy at computational cost.
+    scale : float, optional
+        Scale parameter for the rational mapping z = scale * (1+x)/(1-x).
+        Default is 0.5. Adjust to optimize convergence for different potentials.
+    ell : float, optional
+        Magnetic length in the same units as G_magnitudes. Default is 1.0.
+    sign_magneticfield : int, optional
+        Sign of the charge–field product σ = sgn(q B_z). Must be -1 or +1.
+        Default is -1 (internal convention). Use +1 to obtain kernels for
+        the opposite magnetic field orientation via conjugation and phase
+        factors.
+
+    Returns
+    -------
+    numpy.ndarray of numpy.complex128
+        Exchange kernels with shape ``(nG, nmax, nmax, nmax, nmax)``, where
+        ``nG`` is the number of G-vectors. The array element
+        ``Xs[g, n1, m1, n2, m2]`` gives the exchange matrix element
+        X_{n1,m1,n2,m2}(G_g).
+
+    Raises
+    ------
+    ValueError
+        If ``G_magnitudes`` and ``G_angles`` have different shapes, if
+        ``potential`` is not ``'coulomb'`` or a callable, or if a callable
+        potential returns an array with shape different from ``(nquad,)``.
+
+    Notes
+    -----
+    **Optimizations:**
+
+    - Precomputes Laguerre polynomials L_p^d(z) once for all (n, m) pairs.
+    - Precomputes z^α for all possible values of d1 + d2.
+    - Groups index quadruples by Bessel order N and evaluates integrals in
+      batched matrix operations.
+    - Exploits index-exchange symmetry (valid for any V(q)):
+      ``X[m2, n2, m1, n1] = (-1)^((n1-m1)-(n2-m2)) * X[n1, m1, n2, m2]``
+      to fill symmetric partners without additional O(nmax^4) loops.
     """
 
     # -----------------------------
