@@ -1,5 +1,7 @@
 import numpy as np
-from quantumhall_matrixelements import get_exchange_kernels_GaussLegendre, get_exchange_kernels
+
+from quantumhall_matrixelements import get_exchange_kernels, get_exchange_kernels_GaussLegendre
+
 
 def test_legendre_basic_shape():
     nmax = 2

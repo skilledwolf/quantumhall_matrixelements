@@ -18,7 +18,7 @@ __all__ = [
 ]
 
 
-def get_form_factors_opposite_field(F: "ComplexArray") -> "ComplexArray":
+def get_form_factors_opposite_field(F: ComplexArray) -> ComplexArray:
     """Transform form factors to the opposite magnetic-field sign (σ→-σ).
 
     Parameters
@@ -39,7 +39,7 @@ def get_form_factors_opposite_field(F: "ComplexArray") -> "ComplexArray":
     return np.conj(F) * phase
 
 
-def get_exchange_kernels_opposite_field(Xs: "ComplexArray") -> "ComplexArray":
+def get_exchange_kernels_opposite_field(Xs: ComplexArray) -> ComplexArray:
     """Transform exchange kernels to the opposite magnetic-field sign (σ→-σ).
 
     Parameters
@@ -61,8 +61,8 @@ def get_exchange_kernels_opposite_field(Xs: "ComplexArray") -> "ComplexArray":
 
 
 def verify_exchange_kernel_symmetries(
-    G_magnitudes: "RealArray",
-    G_angles: "RealArray",
+    G_magnitudes: RealArray,
+    G_angles: RealArray,
     nmax: int,
     rtol: float = 1e-7,
     atol: float = 1e-9,
