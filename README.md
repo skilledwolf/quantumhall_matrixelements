@@ -139,7 +139,7 @@ The following wavefunction is used to find all matrix elements:
 
 $$
 \Psi_{nX}^\sigma(x,y)
-= \frac{e^{i\sigma X y \ell_B^{-2}}}{\sqrt{L_y}}i^n\,
+= \frac{e^{i\sigma X y \ell_B^{-2}}}{\sqrt{L_y}}\sigma^n\,
 \phi_{n}(x -X),
 \qquad
 X = \sigma k_y \ell_B^{2}.
