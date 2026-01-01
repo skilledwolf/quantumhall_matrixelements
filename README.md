@@ -120,7 +120,7 @@ A machine-readable `CITATION.cff` file is included in the repository and can be 
 
 ## Backends and Reliability
 
-The package provides two backends for computing exchange kernels:
+The package provides three backends for computing exchange kernels:
 
 1. **`gausslegendre` (Default)**
    - **Method**: Gauss-Legendre quadrature mapped from $[-1, 1]$ to $[0, \infty)$ via a rational mapping.
@@ -133,6 +133,12 @@ The package provides two backends for computing exchange kernels:
    - **Pros**: High precision and stability.
    - **Cons**: Significantly slower than quadrature methods.
    - **Recommended for**: Reference calculations and verifying the Gauss–Legendre backend.
+
+3. **`ogata`**
+   - **Method**: Ogata quadrature for Hankel-type integrals with an automatic small-|G| fallback to Gauss–Legendre.
+   - **Pros**: Typically much faster than the discrete Hankel backend while retaining good accuracy at moderate/large |G|.
+   - **Cons**: May require tuning `ogata_h` / `kmin_ogata` for edge cases (very small |G| is handled by fallback).
+   - **Recommended for**: Faster cross-checks against `hankel`, and workloads dominated by larger |G|.
 
 ## Notes
 The following wavefunction is used to find all matrix elements:

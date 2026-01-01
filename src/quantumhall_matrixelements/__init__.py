@@ -19,6 +19,7 @@ import numpy as np
 from .diagnostic import get_exchange_kernels_opposite_field, get_form_factors_opposite_field
 from .exchange_hankel import get_exchange_kernels_hankel
 from .exchange_legendre import get_exchange_kernels_GaussLegendre
+from .exchange_ogata import get_exchange_kernels_Ogata
 from .planewave import get_form_factors
 
 if TYPE_CHECKING:
@@ -50,6 +51,8 @@ def get_exchange_kernels(
 
         - ``'gausslegendre'`` (default): Gauss-Legendre quadrature with rational mapping.
           Recommended for all nmax.
+        - ``'ogata'``: Ogata quadrature (Hankel/Ogata) with an automatic small-|G|
+          fallback to Gauss-Legendre.
         - ``'hankel'``: Hankel-transform based implementation.
 
     **kwargs :
@@ -59,15 +62,19 @@ def get_exchange_kernels(
 
     Notes
     -----
-    Both backends return kernels normalized for :math:`\\kappa = 1`. Any
+    All backends return kernels normalized for :math:`\\kappa = 1`. Any
     physical interaction strength should be applied by the caller.
     """
     chosen = (method or "gausslegendre").strip().lower()
     if chosen in {"hankel", "hk"}:
         return get_exchange_kernels_hankel(G_magnitudes, G_angles, nmax, **kwargs)
+    if chosen in {"ogata", "og"}:
+        return get_exchange_kernels_Ogata(G_magnitudes, G_angles, nmax, **kwargs)
     if chosen in {"gausslegendre", "gauss-legendre", "legendre", "leg"}:
         return get_exchange_kernels_GaussLegendre(G_magnitudes, G_angles, nmax, **kwargs)
-    raise ValueError(f"Unknown exchange-kernel method: {method!r}. Use 'gausslegendre' or 'hankel'.")
+    raise ValueError(
+        f"Unknown exchange-kernel method: {method!r}. Use 'gausslegendre', 'ogata', or 'hankel'."
+    )
 
 
 try:
@@ -79,8 +86,11 @@ except PackageNotFoundError:  # pragma: no cover - fallback for local, non-insta
 
 __all__ = [
     "get_form_factors",
+    "get_form_factors_opposite_field",
     "get_exchange_kernels",
+    "get_exchange_kernels_opposite_field",
     "get_exchange_kernels_hankel",
     "get_exchange_kernels_GaussLegendre",
+    "get_exchange_kernels_Ogata",
     "__version__",
 ]
