@@ -106,6 +106,22 @@ X_coulomb = get_exchange_kernels(
 
 For more detailed examples, see the example scripts under `examples/` and the tests under `tests/`.
 
+### Fock-matrix construction
+
+For iterative Hartree-Fock workflows, pre-compute exchange kernels once and apply
+them to a density matrix `rho` on every iteration without materializing the
+full `nmax^4` tensor:
+
+```python
+from quantumhall_matrixelements import get_fockmatrix_constructor
+
+fock = get_fockmatrix_constructor(Gs_dimless, thetas, nmax)
+Sigma = fock(rho)          # Sigma(G) = -X(G) . rho(G),  shape (nG, nmax, nmax)
+```
+
+An alternate HF convention used by `quantumhall_hf` is available via
+`get_fockmatrix_constructor_hf`.
+
 ## Magnetic-field sign
 
 The public APIs expose a `sign_magneticfield` keyword that represents
