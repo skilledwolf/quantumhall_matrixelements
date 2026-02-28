@@ -7,7 +7,7 @@ Run from the repo root:
 
 For more stable timing results, pin BLAS threading, e.g.:
 
-  OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=src \\
+  OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=src \
     python validation/benchmark_exchange_backends.py
 """
 
@@ -56,7 +56,7 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--warmup", type=int, default=1)
-    parser.add_argument("--nquad", type=int, default=8000, help="Gauss-Legendre nquad for perf runs")
+    parser.add_argument("--nquad", type=int, default=800, help="fock_fast nquad for perf runs")
     args = parser.parse_args()
 
     rng = np.random.default_rng(args.seed)
@@ -71,15 +71,15 @@ def main() -> int:
 
     X_hk = get_exchange_kernels(kvals, thetas, nmax, method="hankel")
     X_og = get_exchange_kernels(kvals, thetas, nmax, method="ogata")
-    X_gl = get_exchange_kernels(kvals, thetas, nmax, method="gausslegendre")
+    X_ff = get_exchange_kernels(kvals, thetas, nmax, method="fock_fast")
 
     print("Accuracy vs hankel (max abs error per |G|ℓ):")
     print("  k:", kvals)
     print("  ogata:", _per_g_max_abs_err(X_og, X_hk))
-    print("  gausslegendre:", _per_g_max_abs_err(X_gl, X_hk))
+    print("  fock_fast:", _per_g_max_abs_err(X_ff, X_hk))
 
     # -----------------------------
-    # Performance vs Gauss-Legendre
+    # Performance comparison
     # -----------------------------
     scenarios = {
         "A k in [2,6] (ogata-only)": (2.0, 6.0),
@@ -92,9 +92,9 @@ def main() -> int:
         G_mags = rng.uniform(k_lo, k_hi, size=nG)
         G_angles = rng.uniform(0.0, 2.0 * np.pi, size=nG)
 
-        t_gl = _time_call(
+        t_ff = _time_call(
             lambda: get_exchange_kernels(
-                G_mags, G_angles, nmax, method="gausslegendre", nquad=int(args.nquad)
+                G_mags, G_angles, nmax, method="fock_fast", nquad=int(args.nquad)
             ),
             repeats=int(args.repeats),
             warmup=int(args.warmup),
@@ -106,8 +106,8 @@ def main() -> int:
         )
 
         print(f"  {name}")
-        print(f"    gausslegendre nquad={int(args.nquad)}: {t_gl.t_min:.3f}s min  {t_gl.t_mean:.3f}s mean")
-        print(f"    ogata (defaults):             {t_og.t_min:.3f}s min  {t_og.t_mean:.3f}s mean")
+        print(f"    fock_fast nquad={int(args.nquad)}: {t_ff.t_min:.3f}s min  {t_ff.t_mean:.3f}s mean")
+        print(f"    ogata (defaults):          {t_og.t_min:.3f}s min  {t_og.t_mean:.3f}s mean")
 
     return 0
 

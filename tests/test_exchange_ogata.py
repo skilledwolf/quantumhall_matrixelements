@@ -27,6 +27,33 @@ def test_ogata_vs_hankel_small_n():
     assert np.allclose(X_og, X_hk, rtol=5e-3, atol=5e-3)
 
 
+def test_ogata_constant_potential_matches_hankel():
+    """Ogata backend should support the built-in 'constant' potential."""
+    nmax = 2
+    Gs_dimless = np.array([3.0, 5.0])  # ensure Ogata path (k >= kmin_ogata) is used
+    thetas = np.array([0.1, 0.4])
+    kappa = 0.7
+
+    X_og = get_exchange_kernels(
+        Gs_dimless,
+        thetas,
+        nmax,
+        method="ogata",
+        potential="constant",
+        kappa=kappa,
+    )
+    X_hk = get_exchange_kernels(
+        Gs_dimless,
+        thetas,
+        nmax,
+        method="hankel",
+        potential="constant",
+        kappa=kappa,
+    )
+
+    assert np.allclose(X_og, X_hk, rtol=5e-3, atol=5e-3)
+
+
 def test_ogata_sign_magneticfield_phase_relation():
     """sign_magneticfield=+1 should match the conjugation/phase relation of σ flip."""
     nmax = 2

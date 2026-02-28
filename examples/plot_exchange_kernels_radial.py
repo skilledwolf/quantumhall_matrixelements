@@ -1,8 +1,7 @@
 """Exchange kernel diagonal elements X_{nnnn}(G) vs |G|ℓ_B.
 
 This example computes selected diagonal components of the exchange kernel
-using the Gauss–Legendre backend and plots their real parts as a function
-of |G|ℓ_B.
+and plots their real parts as a function of |G|ℓ_B.
 """
 from __future__ import annotations
 
@@ -18,7 +17,7 @@ def main() -> None:
     q = np.linspace(0.2, 4.0, 80)
     theta = np.zeros_like(q)
 
-    X = get_exchange_kernels(q, theta, nmax, method="gausslegendre")
+    X = get_exchange_kernels(q, theta, nmax)
 
     fig, ax = plt.subplots()
     for n in range(nmax):
@@ -31,7 +30,7 @@ def main() -> None:
 
     ax.set_xlabel(r"$|G| \ell_B$")
     ax.set_ylabel(r"$\mathrm{Re}\,X_{nnnn}(G)$  (κ=1)")
-    ax.set_title("Diagonal exchange kernels (Gauss–Legendre backend)")
+    ax.set_title("Diagonal exchange kernels (fock_fast backend)")
     ax.legend()
     ax.grid(True, alpha=0.3)
     fig.tight_layout()

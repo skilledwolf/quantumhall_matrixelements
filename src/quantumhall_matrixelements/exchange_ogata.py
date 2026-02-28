@@ -10,20 +10,21 @@ The public entry point is :func:`get_exchange_kernels_Ogata`.
 """
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from functools import cache
-from typing import TYPE_CHECKING, Callable
+from typing import cast
 
 import numpy as np
 import scipy.special as sps
+from numpy.typing import NDArray
 from scipy.special import roots_legendre
 
-from .diagnostic import get_exchange_kernels_opposite_field
+from ._select import DEFAULT_CANONICAL_SELECT_MAX_ENTRIES, normalize_select
 
-if TYPE_CHECKING:
-    from numpy.typing import NDArray
-
-    ComplexArray = NDArray[np.complex128]
-    RealArray = NDArray[np.float64]
+ComplexArray = NDArray[np.complex128]
+RealArray = NDArray[np.float64]
+IntArray = NDArray[np.int64]
+Int8Array = NDArray[np.int8]
 
 
 # -----------------------------------------------------------------------------
@@ -35,7 +36,7 @@ def _parity_factor(N: int) -> int:
 
 
 @cache
-def _legendre_nodes_weights_mapped(nquad: int, scale: float) -> tuple[np.ndarray, np.ndarray]:
+def _legendre_nodes_weights_mapped(nquad: int, scale: float) -> tuple[RealArray, RealArray]:
     """
     Gauss-Legendre nodes/weights mapped from [-1, 1] to [0, inf).
 
@@ -52,12 +53,12 @@ def _legendre_nodes_weights_mapped(nquad: int, scale: float) -> tuple[np.ndarray
 # -----------------------------------------------------------------------------
 # Ogata quadrature helpers (bespoke, based on the same ingredients as `hankel`)
 # -----------------------------------------------------------------------------
-def _ogata_psi(t: np.ndarray) -> np.ndarray:
+def _ogata_psi(t: RealArray) -> RealArray:
     """Ogata's double-exponential map ψ(t) = t * tanh((π/2) sinh t)."""
-    return t * np.tanh(0.5 * np.pi * np.sinh(t))
+    return cast(RealArray, t * np.tanh(0.5 * np.pi * np.sinh(t)))
 
 
-def _ogata_dpsi(t: np.ndarray) -> np.ndarray:
+def _ogata_dpsi(t: RealArray) -> RealArray:
     """Derivative of ψ(t), with stabilization for large t."""
     t = np.asarray(t, dtype=np.float64)
     out = np.ones_like(t)
@@ -73,7 +74,7 @@ def _ogata_dpsi(t: np.ndarray) -> np.ndarray:
 
 
 @cache
-def _ogata_nodes_weights(nu: int, h: float, N: int) -> tuple[np.ndarray, np.ndarray]:
+def _ogata_nodes_weights(nu: int, h: float, N: int) -> tuple[RealArray, RealArray]:
     """
     Precompute Ogata nodes and weights for the Hankel transform of order `nu`.
 
@@ -115,50 +116,34 @@ def _ogata_nodes_weights(nu: int, h: float, N: int) -> tuple[np.ndarray, np.ndar
     return np.asarray(x, dtype=np.float64), np.asarray(wgt, dtype=np.float64)
 
 
-def _broadcast_potential(V: np.ndarray, target_shape: tuple[int, int]) -> np.ndarray:
-    """
-    Broadcast a potential array to target_shape (nG, Nnodes) if possible.
-    Accepts:
-      - scalar
-      - (Nnodes,)
-      - (nG,)
-      - (nG, Nnodes)
-    """
-    V = np.asarray(V)
-    if V.ndim == 0:
-        return np.broadcast_to(V, target_shape)
-    if V.shape == target_shape:
-        return V
-    nG, Nn = target_shape
-    if V.shape == (Nn,):
-        return np.broadcast_to(V[None, :], target_shape)
-    if V.shape == (nG,):
-        return np.broadcast_to(V[:, None], target_shape)
-    raise ValueError(
-        f"Callable potential returned shape {V.shape}, expected broadcastable to {target_shape}"
-    )
-
-
 # -----------------------------------------------------------------------------
 # Main public function
 # -----------------------------------------------------------------------------
 def get_exchange_kernels_Ogata(
-    G_magnitudes,
-    G_angles,
+    G_magnitudes: RealArray,
+    G_angles: RealArray,
     nmax: int,
     *,
-    potential: str | Callable[[np.ndarray], np.ndarray] = "coulomb",
+    potential: str | Callable[[RealArray], RealArray] = "coulomb",
     kappa: float = 1.0,
     nquad: int = 8000,
     scale: float = 0.5,
-    ell: float = 1.0,
+    nlag: int = 80,
     sign_magneticfield: int = -1,
     # Ogata-specific knobs
     ogata_h: float = 0.0075,
     ogata_N: int | None = None,
     kmin_ogata: float = 2.0,
     chunk_size: int = 128,
-) -> "ComplexArray":
+    select: Iterable[tuple[int, int, int, int]] | None = None,
+    canonical_select_max_entries: int | None = DEFAULT_CANONICAL_SELECT_MAX_ENTRIES,
+    ogata_auto: bool = False,
+    ogata_auto_rtol: float = 3e-3,
+    ogata_auto_atol: float = 1e-6,
+    ogata_auto_refine: float = 2.0,
+    ogata_auto_max_refine: int = 1,
+    ogata_auto_fallback: str = "gausslegendre",
+) -> tuple[ComplexArray, list[tuple[int, int, int, int]]]:
     """Compute exchange kernels using Ogata quadrature (Hankel/Ogata) with fallback.
 
     This function is a drop-in alternative to the mapped Gauss–Legendre method.
@@ -170,9 +155,9 @@ def get_exchange_kernels_Ogata(
 
     Parameters
     ----------
-    G_magnitudes, G_angles, nmax, potential, kappa, nquad, scale, ell, sign_magneticfield
-        Same meaning as in the Gauss–Legendre implementation. ``nquad`` and
-        ``scale`` are used for the fallback path.
+    G_magnitudes, G_angles, nmax, potential, kappa, nquad, scale :
+        Same meaning as in the Gauss–Legendre implementation. ``nquad`` and ``scale`` are
+        used for the fallback path.
     ogata_h : float
         Ogata step size h (smaller => more nodes => higher accuracy, slower).
         Default 0.0075.
@@ -184,6 +169,29 @@ def get_exchange_kernels_Ogata(
         more aggressively.
     chunk_size : int
         Number of quadruples processed at once per N bucket (controls memory).
+    select : iterable of (n1, m1, n2, m2), optional
+        If provided, compute only these entries and return an array of shape
+        ``(nG, n_select)`` in the input order. This avoids allocating the full
+        ``(nG, nmax, nmax, nmax, nmax)`` tensor.
+    ogata_auto : bool, optional
+        If True, attempt Ogata convergence by refining ``ogata_h`` (and ``ogata_N``)
+        and fall back for any |G| that does not converge within tolerances.
+    ogata_auto_rtol, ogata_auto_atol : float, optional
+        Relative/absolute tolerances for the per-|G| convergence check between
+        successive Ogata refinements.
+    ogata_auto_refine : float, optional
+        Refinement factor for Ogata step size ``h`` (h -> h / refine).
+    ogata_auto_max_refine : int, optional
+        Maximum number of refinements. Must be >= 1 if ogata_auto is enabled.
+    ogata_auto_fallback : {"gausslegendre", "hankel"}, optional
+        Backend used for |G| values that fail Ogata convergence.
+
+    Returns
+    -------
+    values : numpy.ndarray (nG, n_select)
+        Compressed exchange values matching ``select_list``.
+    select_list : list[tuple[int, int, int, int]]
+        Quadruples corresponding to the columns of ``values``.
     """
     # -----------------------------
     # 0. Input handling
@@ -198,13 +206,142 @@ def get_exchange_kernels_Ogata(
     nG = int(G_magnitudes.size)
 
     nmax = int(nmax)
+
+    select_list, sel_n1, sel_m1, sel_n2, sel_m2 = normalize_select(
+        nmax, select, canonical_select_max_entries=canonical_select_max_entries
+    )
+
+    if ogata_auto:
+        if ogata_auto_max_refine < 1:
+            raise ValueError("ogata_auto_max_refine must be >= 1 when ogata_auto is enabled.")
+        if ogata_auto_refine <= 1.0:
+            raise ValueError("ogata_auto_refine must be > 1 when ogata_auto is enabled.")
+
+        def _per_g_max_abs(arr: ComplexArray) -> RealArray:
+            return cast(RealArray, np.max(np.abs(arr), axis=1))
+
+        k_all = np.asarray(G_magnitudes, dtype=float)
+        og_mask = (k_all > 0.0) & (k_all >= float(kmin_ogata))
+        if not np.any(og_mask):
+            return get_exchange_kernels_Ogata(
+                G_magnitudes,
+                G_angles,
+                nmax,
+                potential=potential,
+                kappa=kappa,
+                nquad=nquad,
+                scale=scale,
+                nlag=nlag,
+                sign_magneticfield=sign_magneticfield,
+                ogata_h=ogata_h,
+                ogata_N=ogata_N,
+                kmin_ogata=kmin_ogata,
+                chunk_size=chunk_size,
+                ogata_auto=False,
+            )
+
+        h_curr = float(ogata_h)
+        N_curr = ogata_N
+        vals_prev, sel_prev = get_exchange_kernels_Ogata(
+            G_magnitudes,
+            G_angles,
+            nmax,
+            potential=potential,
+            kappa=kappa,
+            nquad=nquad,
+            scale=scale,
+            nlag=nlag,
+            sign_magneticfield=sign_magneticfield,
+            ogata_h=h_curr,
+            ogata_N=N_curr,
+            kmin_ogata=kmin_ogata,
+            chunk_size=chunk_size,
+            select=select,
+            ogata_auto=False,
+        )
+        result_select = sel_prev
+
+        ok_mask = np.zeros_like(og_mask, dtype=bool)
+        vals_curr = vals_prev
+        for _ in range(int(ogata_auto_max_refine)):
+            h_curr = h_curr / float(ogata_auto_refine)
+            if N_curr is None:
+                N_next = None
+            else:
+                N_next = int(np.ceil(int(N_curr) * float(ogata_auto_refine)))
+
+            vals_curr, sel_curr = get_exchange_kernels_Ogata(
+                G_magnitudes,
+                G_angles,
+                nmax,
+                potential=potential,
+                kappa=kappa,
+                nquad=nquad,
+                scale=scale,
+                nlag=nlag,
+                sign_magneticfield=sign_magneticfield,
+                ogata_h=h_curr,
+                ogata_N=N_next,
+                kmin_ogata=kmin_ogata,
+                chunk_size=chunk_size,
+                select=select,
+                ogata_auto=False,
+            )
+            if sel_curr != result_select:
+                raise RuntimeError("select list changed between Ogata auto refinements")
+
+            diff = _per_g_max_abs(vals_curr - vals_prev)
+            scale_ref = np.maximum(_per_g_max_abs(vals_curr), _per_g_max_abs(vals_prev))
+            tol = np.maximum(float(ogata_auto_atol), float(ogata_auto_rtol) * scale_ref)
+            ok = (diff <= tol) & np.isfinite(diff) & np.isfinite(scale_ref)
+            ok_mask = (~og_mask) | ok
+            if np.all(ok_mask):
+                break
+            vals_prev = vals_curr
+            N_curr = N_next
+
+        result_vals = vals_curr
+        bad_mask = og_mask & ~ok_mask
+        if np.any(bad_mask):
+            fallback = str(ogata_auto_fallback).strip().lower()
+            if fallback not in {"gausslegendre", "hankel"}:
+                raise ValueError("ogata_auto_fallback must be 'gausslegendre' or 'hankel'.")
+            G_bad = np.asarray(G_magnitudes)[bad_mask]
+            A_bad = np.asarray(G_angles)[bad_mask]
+            if fallback == "hankel":
+                from .exchange_hankel import get_exchange_kernels_hankel
+
+                X_bad, sel_bad = get_exchange_kernels_hankel(
+                    G_bad,
+                    A_bad,
+                    nmax,
+                    potential=potential,
+                    kappa=kappa,
+                    sign_magneticfield=sign_magneticfield,
+                    select=select,
+                )
+            else:
+                from .exchange_legendre import get_exchange_kernels_GaussLegendre
+
+                X_bad, sel_bad = get_exchange_kernels_GaussLegendre(
+                    G_bad,
+                    A_bad,
+                    nmax,
+                    potential=potential,
+                    kappa=kappa,
+                    nquad=nquad,
+                    scale=scale,
+                    sign_magneticfield=sign_magneticfield,
+                    select=select,
+                )
+            if sel_bad != result_select:
+                raise RuntimeError("fallback backend returned different select list")
+            result_vals = np.array(result_vals, copy=True)
+            result_vals[bad_mask] = X_bad
+
+        return result_vals, result_select
     if nmax <= 0:
         raise ValueError("nmax must be positive")
-
-    ell = float(ell)
-    if not (ell > 0.0):
-        raise ValueError("ell must be > 0")
-
     # -----------------------------
     # 1. Potential choice
     # -----------------------------
@@ -215,9 +352,10 @@ def get_exchange_kernels_Ogata(
         pot_kind = str(potential).strip().lower()
         pot_fn = None
 
-    if pot_kind not in ("coulomb", "callable"):
-        raise ValueError("potential must be 'coulomb' or a callable V(q).")
+    if pot_kind not in ("coulomb", "constant", "callable"):
+        raise ValueError("potential must be 'coulomb', 'constant', or a callable V(q).")
     is_coulomb = pot_kind == "coulomb"
+    is_constant = pot_kind == "constant"
 
     # -----------------------------
     # 2. Derived indexing/combinatorics (vectorized)
@@ -277,25 +415,17 @@ def get_exchange_kernels_Ogata(
     # -----------------------------
     # 5. Build buckets of quadruples by N (same symmetry strategy)
     # -----------------------------
-    buckets: dict[int, list[tuple[int, int, int, int]]] = {int(N): [] for N in Ns}
-
-    for n1 in range(nmax):
-        for m1 in range(nmax):
-            D1 = int(D_nm[n1, m1])
-            pair1 = n1 * nmax + m1
-            for n2 in range(nmax):
-                for m2 in range(nmax):
-                    pair2 = m2 * nmax + n2  # partner indexing convention
-                    if pair1 > pair2:
-                        continue
-                    D2 = int(D_nm[m2, n2])  # (m2 - n2)
-                    N = int(D1 + D2)
-                    buckets[N].append((n1, m1, n2, m2))
+    buckets: dict[int, list[tuple[int, int, int, int, int]]] = {int(N): [] for N in Ns}
+    for idx_sel, (n1, m1, n2, m2) in enumerate(select_list):
+        D1 = int(D_nm[n1, m1])
+        D2 = int(D_nm[m2, n2])  # (m2 - n2)
+        N = int(D1 + D2)
+        buckets[N].append((n1, m1, n2, m2, idx_sel))
 
     # -----------------------------
     # 6. Split G-vectors into Ogata vs fallback groups
     # -----------------------------
-    k_all = (G_magnitudes * ell).astype(np.float64)  # k = |G|ℓ
+    k_all = np.asarray(G_magnitudes, dtype=float).astype(np.float64)  # k = |G|
     # Ogata is used only for k>0 and above threshold.
     og_mask = (k_all > 0.0) & (k_all >= float(kmin_ogata))
     fb_mask = ~og_mask
@@ -316,27 +446,35 @@ def get_exchange_kernels_Ogata(
         sqrt2z_fb = np.sqrt(2.0 * z_fb)
         arg_fb = k_fb[:, None] * sqrt2z_fb[None, :]  # (nG_fb, nquad)
 
-        # Callable potential: evaluated once on the fallback grid
+        # Callable/constant potential: evaluated once on the fallback grid
+        Veff_fb = np.ones_like(z_fb)
         if not is_coulomb:
-            qvals = sqrt2z_fb / ell  # (nquad,)
-            Veff_fb = pot_fn(qvals) / (2.0 * np.pi * ell**2)
-            Veff_fb = np.asarray(Veff_fb)
-            if Veff_fb.shape != z_fb.shape:
-                raise ValueError("Callable potential must return array of shape (nquad,) on fallback grid.")
-        else:
-            Veff_fb = None
+            if is_constant:
+                Veff_fb = (float(kappa) / (2.0 * np.pi)) * np.ones_like(z_fb)
+            else:
+                qvals = sqrt2z_fb  # (nquad,)
+                assert pot_fn is not None
+                Vraw_fb = np.asarray(pot_fn(qvals))
+                if np.iscomplexobj(Vraw_fb):
+                    raise ValueError("Callable potential must be real-valued.")
+                Vraw_fb = Vraw_fb.astype(np.float64, copy=False)
+                if Vraw_fb.shape != z_fb.shape:
+                    raise ValueError(
+                        "Callable potential must return array of shape (nquad,) on fallback grid."
+                    )
+                Veff_fb = Vraw_fb / (2.0 * np.pi)
 
         # Precompute z^alpha for all ds for fallback
         z_pows_fb = np.empty((max_d_sum + 1, z_fb.size), dtype=np.float64)
         if is_coulomb:
             # alpha = (ds - 1)/2
-            for ds in range(max_d_sum + 1):
-                alpha = 0.5 * (ds - 1)
-                z_pows_fb[ds] = z_fb**alpha
+            for ds_idx in range(max_d_sum + 1):
+                alpha = 0.5 * (ds_idx - 1)
+                z_pows_fb[ds_idx] = z_fb**alpha
         else:
-            for ds in range(max_d_sum + 1):
-                alpha = 0.5 * ds
-                z_pows_fb[ds] = z_fb**alpha
+            for ds_idx in range(max_d_sum + 1):
+                alpha = 0.5 * ds_idx
+                z_pows_fb[ds_idx] = z_fb**alpha
 
         # Precompute Laguerre table on fallback grid for all keys
         # Shape: (nquad, nkeys_total)
@@ -346,15 +484,41 @@ def get_exchange_kernels_Ogata(
             d = int(key_d[key])
             L_fb[:, key] = sps.eval_genlaguerre(p, d, z_fb)
 
-        # Cache of J_abs*w for each absN on fallback grid
-        Jw_fb_cache: dict[int, np.ndarray] = {}
+        # Gauss-Laguerre for ds=0 Coulomb fallback: absorbs z^{-1/2} e^{-z}.
+        # Only used for |G| small enough that Bessel oscillations are resolvable.
+        lag_J0w_fb = np.empty((0, 0), dtype=np.float64)
+        lag_L_fb = np.empty((0, 0), dtype=np.float64)
+        lag_fb_mask = np.zeros(k_fb.size, dtype=bool)  # within fallback G subset
+        if is_coulomb:
+            nlag_eff = min(max(int(nlag), 2 * nmax), 350)
+            xg_fb, wg_fb = sps.roots_genlaguerre(nlag_eff, -0.5)
+            g_threshold = float(np.sqrt(nlag_eff))
+            lag_fb_mask = k_fb <= g_threshold
+            k_fb_lag = k_fb[lag_fb_mask]
+            if k_fb_lag.size > 0:
+                arg_lag_fb = k_fb_lag[:, None] * np.sqrt(2.0 * xg_fb)[None, :]
+                lag_J0w_fb = (sps.jv(0, arg_lag_fb) * wg_fb[None, :]).astype(np.float64)
+            else:
+                lag_J0w_fb = np.empty((0, nlag_eff), dtype=np.float64)
+            # L_p^0(xg) for p=0..nmax-1 on Gauss-Laguerre nodes
+            lag_L_fb = np.empty((xg_fb.size, nmax), dtype=np.float64)
+            for p in range(nmax):
+                lag_L_fb[:, p] = sps.eval_genlaguerre(p, 0, xg_fb)
     else:
-        # Placeholders
-        z_fb = w_fb = exp_minus_z_fb = sqrt2z_fb = arg_fb = None
-        Veff_fb = None
-        z_pows_fb = None
-        L_fb = None
-        Jw_fb_cache = {}
+        z_fb = np.empty((0,), dtype=np.float64)
+        w_fb = np.empty((0,), dtype=np.float64)
+        exp_minus_z_fb = np.empty((0,), dtype=np.float64)
+        sqrt2z_fb = np.empty((0,), dtype=np.float64)
+        arg_fb = np.empty((0, 0), dtype=np.float64)
+        Veff_fb = np.empty((0,), dtype=np.float64)
+        z_pows_fb = np.empty((max_d_sum + 1, 0), dtype=np.float64)
+        L_fb = np.empty((0, nkeys_total), dtype=np.float64)
+        lag_J0w_fb = np.empty((0, 0), dtype=np.float64)
+        lag_L_fb = np.empty((0, 0), dtype=np.float64)
+        lag_fb_mask = np.zeros(0, dtype=bool)
+
+    # Cache of J_abs*w for each absN on fallback grid
+    Jw_fb_cache: dict[int, RealArray] = {}
 
     # -----------------------------
     # 8. Ogata quadrature setup (global)
@@ -372,7 +536,7 @@ def get_exchange_kernels_Ogata(
     # -----------------------------
     # 9. Output array
     # -----------------------------
-    Xs = np.zeros((nG, nmax, nmax, nmax, nmax), dtype=np.complex128)
+    Xs: ComplexArray = np.zeros((nG, len(select_list)), dtype=np.complex128)
     sqrt2 = np.sqrt(2.0)
 
     # -----------------------------
@@ -387,44 +551,56 @@ def get_exchange_kernels_Ogata(
         # Quick check: if no quadruples for either sign, skip
         quad_union: list[tuple[int, int, int, int]] = []
         for N in Ns_here:
-            quad_union.extend(buckets.get(int(N), []))
+            quad_items = buckets.get(int(N), [])
+            if not quad_items:
+                continue
+            quad_union.extend((q[0], q[1], q[2], q[3]) for q in quad_items)
         if not quad_union:
             continue
 
         # -------------------------
         # Ogata precompute for this absN (only if needed)
         # -------------------------
+        x_nodes: RealArray = np.empty((0,), dtype=np.float64)
+        wgt_nodes: RealArray = np.empty((0,), dtype=np.float64)
+        W_og: RealArray = np.empty((0, 0), dtype=np.float64)
+        common_og: RealArray = np.empty((0, 0), dtype=np.float64)
+        logu_minus_og: RealArray = np.empty((0, 0), dtype=np.float64)
+        Veff_og: RealArray = np.empty((0, 0), dtype=np.float64)
+        global_to_local: IntArray = np.full(nkeys_total, -1, dtype=np.int64)
+        L_og: RealArray = np.empty((0, 0, 0), dtype=np.float64)
+        WB_ds: list[RealArray | None] = [None] * (max_d_sum + 1)
+
         if og_has:
             x_nodes, wgt_nodes = _ogata_nodes_weights(absN, h, Nnodes)  # (Nnodes,), (Nnodes,)
-            # Build u=z grid for all Ogata G-vectors
             k = k_og  # (nG_og,)
-            # weights including 1/k^2
-            W = (wgt_nodes[None, :] / (k[:, None] ** 2)).astype(np.float64)  # (nG_og, Nnodes)
+            W_og = (wgt_nodes[None, :] / (k[:, None] ** 2)).astype(np.float64)  # (nG_og, Nnodes)
 
             u = x_nodes[None, :] / k[:, None]  # (nG_og, Nnodes)
             u2 = u * u
-            z = 0.5 * u2
-            log2 = np.log(2.0)
-            # log(u) - 0.5 log 2
-            logu_minus = np.log(u) - 0.5 * log2
-            common = -0.5 * u2
+            z_og = 0.5 * u2
+            logu_minus_og = np.log(u) - 0.5 * np.log(2.0)
+            common_og = -0.5 * u2
 
-            # Potential on Ogata grid (if needed)
             if not is_coulomb:
-                q = u / ell  # (nG_og, Nnodes)
-                # Many user-supplied potentials are only written for 1D arrays.
-                # Call on a flattened view and reshape back for robustness.
-                Vraw = pot_fn(q.reshape(-1))
-                Vraw = np.asarray(Vraw).reshape(q.shape)
-                Veff_og = Vraw / (2.0 * np.pi * ell**2)
-                Veff_og = _broadcast_potential(Veff_og, q.shape)
-                pot_complex = np.iscomplexobj(Veff_og)
-            else:
-                Veff_og = None
-                pot_complex = False
+                if is_constant:
+                    Veff_og = (float(kappa) / (2.0 * np.pi)) * np.ones_like(u)
+                else:
+                    assert pot_fn is not None
+                    Vraw = np.asarray(pot_fn(u.reshape(-1)))
+                    if np.iscomplexobj(Vraw):
+                        raise ValueError("Callable potential must be real-valued.")
+                    try:
+                        Vraw = Vraw.reshape(u.shape)
+                    except ValueError as exc:
+                        raise ValueError(
+                            "Callable potential must return an array compatible with the Ogata "
+                            "grid shape."
+                        ) from exc
+                    Vraw = Vraw.astype(np.float64, copy=False)
+                    Veff_og = Vraw / (2.0 * np.pi)
 
             # Determine all keys and ds values needed (union across +/- N)
-            # Convert union list to arrays
             n1_u = np.fromiter((q[0] for q in quad_union), dtype=int, count=len(quad_union))
             m1_u = np.fromiter((q[1] for q in quad_union), dtype=int, count=len(quad_union))
             n2_u = np.fromiter((q[2] for q in quad_union), dtype=int, count=len(quad_union))
@@ -432,62 +608,42 @@ def get_exchange_kernels_Ogata(
 
             key1_g_u = key_nm[n1_u, m1_u]
             key2_g_u = key_nm[m2_u, n2_u]
-            keys_needed = np.unique(np.concatenate([key1_g_u, key2_g_u]).astype(int))
+            keys_needed = np.unique(np.concatenate([key1_g_u, key2_g_u]).astype(np.int64))
             ds_u = d_nm[n1_u, m1_u] + d_nm[m2_u, n2_u]
             ds_needed = np.unique(ds_u.astype(int))
 
             # Local mapping from global key -> [0..nkeys-1] for this absN
-            global_to_local = np.full(nkeys_total, -1, dtype=int)
-            global_to_local[keys_needed] = np.arange(keys_needed.size, dtype=int)
+            global_to_local = np.full(nkeys_total, -1, dtype=np.int64)
+            global_to_local[keys_needed] = np.arange(keys_needed.size, dtype=np.int64)
 
             # Precompute Laguerre values on Ogata z grid for needed keys
             L_og = np.empty((k.size, x_nodes.size, keys_needed.size), dtype=np.float64)
             for j, key in enumerate(keys_needed):
                 p = int(key_p[key])
                 d = int(key_d[key])
-                L_og[:, :, j] = sps.eval_genlaguerre(p, d, z)
+                L_og[:, :, j] = sps.eval_genlaguerre(p, d, z_og)
 
             # Precompute WB_ds = W * exp(-u^2/2) * (u^2/2)^alpha * (Veff if any)
-            WB_ds: list[np.ndarray | None] = [None] * (max_d_sum + 1)
-            for ds in ds_needed:
-                ds = int(ds)
-                power = (ds - 1) if is_coulomb else ds
-                # exponent = -u^2/2 + power * (log u - 0.5 log 2)
-                base_real = np.exp(common + float(power) * logu_minus)
-                if is_coulomb:
-                    WB = base_real * W
-                else:
-                    WB = (base_real * Veff_og) * W  # may be complex
-                WB_ds[ds] = WB
-
-            # dtype for radial values on ogata path
-            radial_dtype_og = np.complex128 if pot_complex else np.float64
-        else:
-            # placeholders to keep type-checkers happy
-            x_nodes = wgt_nodes = None
-            L_og = None
-            WB_ds = None
-            global_to_local = None
-            keys_needed = None
-            radial_dtype_og = np.float64
-            pot_complex = False
+            for ds_idx in ds_needed:
+                ds_idx = int(ds_idx)
+                power = (ds_idx - 1) if is_coulomb else ds_idx
+                base_real = np.exp(common_og + float(power) * logu_minus_og)
+                WB = (
+                    base_real * W_og if is_coulomb else (base_real * Veff_og) * W_og
+                )
+                WB_ds[ds_idx] = WB
 
         # -------------------------
         # Fallback Bessel cache for this absN (only if needed)
         # -------------------------
+        Jw_fb: RealArray = np.empty((0, 0), dtype=np.float64)
         if fb_has:
             if absN not in Jw_fb_cache:
-                # J_abs(arg) on fallback subset, then multiply by w
                 J_abs = sps.jv(absN, arg_fb)  # (nG_fb, nquad)
                 Jw_fb_cache[absN] = (J_abs * w_fb[None, :]).astype(np.float64)
             Jw_fb = Jw_fb_cache[absN]
-            radial_dtype_fb = np.complex128 if (not is_coulomb and np.iscomplexobj(Veff_fb)) else np.float64
-        else:
-            Jw_fb = None
-            radial_dtype_fb = np.float64
 
-        # Decide radial dtype for merged (ogata+fallback) block
-        radial_dtype = np.complex128 if (radial_dtype_og == np.complex128 or radial_dtype_fb == np.complex128) else np.float64
+        radial_dtype = np.float64
 
         # -------------------------
         # Process each N bucket for this absN
@@ -504,29 +660,32 @@ def get_exchange_kernels_Ogata(
 
             # Convert quads to vector arrays
             nQ = len(quad_list)
-            n1 = np.fromiter((q[0] for q in quad_list), dtype=int, count=nQ)
-            m1 = np.fromiter((q[1] for q in quad_list), dtype=int, count=nQ)
-            n2 = np.fromiter((q[2] for q in quad_list), dtype=int, count=nQ)
-            m2 = np.fromiter((q[3] for q in quad_list), dtype=int, count=nQ)
+            n1_arr = np.fromiter((q[0] for q in quad_list), dtype=int, count=nQ)
+            m1_arr = np.fromiter((q[1] for q in quad_list), dtype=int, count=nQ)
+            n2_arr = np.fromiter((q[2] for q in quad_list), dtype=int, count=nQ)
+            m2_arr = np.fromiter((q[3] for q in quad_list), dtype=int, count=nQ)
+            sel_idx_arr = np.fromiter((q[4] for q in quad_list), dtype=int, count=nQ)
 
-            d1 = d_nm[n1, m1].astype(int)
-            d2 = d_nm[m2, n2].astype(int)
-            ds = (d1 + d2).astype(int)
+            d1 = d_nm[n1_arr, m1_arr].astype(int)
+            d2 = d_nm[m2_arr, n2_arr].astype(int)
+            ds_arr = (d1 + d2).astype(int)
 
             # Scalar prefactors (independent of G and quadrature)
-            C1 = C_nm[n1, m1]
-            C2 = C_nm[m2, n2]
+            C1 = C_nm[n1_arr, m1_arr]
+            C2 = C_nm[m2_arr, n2_arr]
             if is_coulomb:
-                pref = (float(kappa) * C1 * C2 / sqrt2) * phase_power[ds]
+                pref = (float(kappa) * C1 * C2 / sqrt2) * phase_power[ds_arr]
             else:
-                pref = (C1 * C2) * phase_power[ds]
+                pref = (C1 * C2) * phase_power[ds_arr]
 
-            extra_sgns = extra_sign_nm[n2, m2].astype(np.int8)
-            scalar = (pref * extra_sgns.astype(np.float64) * float(signN)).astype(np.complex128)  # (nQ,)
+            extra_sgns = extra_sign_nm[n2_arr, m2_arr].astype(np.int8)
+            scalar = (pref * extra_sgns.astype(np.float64) * float(signN)).astype(
+                np.complex128
+            )  # (nQ,)
 
             # Precompute key indices for this bucket (global key indices always available)
-            key1_g = key_nm[n1, m1].astype(int)          # (nQ,)
-            key2_g = key_nm[m2, n2].astype(int)          # (nQ,)
+            key1_g = key_nm[n1_arr, m1_arr].astype(int)  # (nQ,)
+            key2_g = key_nm[m2_arr, n2_arr].astype(int)  # (nQ,)
 
             # For Ogata, map to local key indices within L_og
             if og_has:
@@ -539,12 +698,9 @@ def get_exchange_kernels_Ogata(
                 sl = slice(start, end)
                 b = end - start
 
-                n1_b = n1[sl]
-                m1_b = m1[sl]
-                n2_b = n2[sl]
-                m2_b = m2[sl]
-                ds_b = ds[sl]
+                ds_b = ds_arr[sl]
                 scalar_b = scalar[sl]
+                sel_idx_b = sel_idx_arr[sl]
 
                 # radial_block: (nG, b)
                 radial_block = np.zeros((nG, b), dtype=radial_dtype)
@@ -563,13 +719,14 @@ def get_exchange_kernels_Ogata(
                         ds_val = int(ds_val)
                         WB = WB_ds[ds_val]
                         if WB is None:
-                            # This ds wasn't precomputed for this absN (shouldn't happen, but be safe)
+                            # This ds wasn't precomputed for this absN (shouldn't happen; be safe).
                             power = (ds_val - 1) if is_coulomb else ds_val
-                            base_real = np.exp(common + float(power) * logu_minus)
-                            if is_coulomb:
-                                WB = base_real * W
-                            else:
-                                WB = (base_real * Veff_og) * W
+                            base_real = np.exp(common_og + float(power) * logu_minus_og)
+                            WB = (
+                                base_real * W_og
+                                if is_coulomb
+                                else (base_real * Veff_og) * W_og
+                            )
                             WB_ds[ds_val] = WB
 
                         mask = (ds_b == ds_val)
@@ -587,42 +744,52 @@ def get_exchange_kernels_Ogata(
 
                 # -------- Fallback contribution --------
                 if fb_has:
-                    # Build term matrix on fallback z grid for this block: (nquad, b)
-                    # base_mat = exp(-z) * z^alpha * (Veff if any)
-                    # We use z_pows_fb[ds_b] -> (b, nquad) then transpose.
+                    # ds=0 Coulomb entries with small |G| use Gauss-Laguerre;
+                    # everything else uses mapped Gauss-Legendre.
+                    ds0_mask_b = (ds_b == 0) if is_coulomb else None
+                    has_ds0_lag = (ds0_mask_b is not None
+                                  and np.any(ds0_mask_b)
+                                  and np.any(lag_fb_mask))
+
+                    # --- Mapped GL path for all non-ds0 entries, and ds0 at large |G| ---
+                    # Build term matrix on fallback z grid: (nquad, b)
                     zpow_sel = z_pows_fb[ds_b]  # (b, nquad)
                     base_mat = exp_minus_z_fb[:, None] * zpow_sel.T  # (nquad, b)
                     if not is_coulomb:
                         base_mat = base_mat * Veff_fb[:, None]
 
-                    L1_fb = L_fb[:, key1_g[sl]]  # (nquad, b)
-                    L2_fb = L_fb[:, key2_g[sl]]  # (nquad, b)
-                    term_mat = base_mat * L1_fb * L2_fb  # (nquad, b)
+                    L1_fb_b = L_fb[:, key1_g[sl]]  # (nquad, b)
+                    L2_fb_b = L_fb[:, key2_g[sl]]  # (nquad, b)
+                    term_mat = base_mat * L1_fb_b * L2_fb_b  # (nquad, b)
 
-                    radial_fb = Jw_fb @ term_mat  # (nG_fb, b), real or complex
-                    radial_block[fb_idx, :] = radial_fb
+                    radial_fb_all = Jw_fb @ term_mat  # (nG_fb, b)
+                    radial_block[fb_idx, :] = radial_fb_all
+
+                    # --- Overwrite ds=0 entries for small-|G| fallback with Gauss-Laguerre ---
+                    if has_ds0_lag:
+                        assert ds0_mask_b is not None
+                        idx0 = np.nonzero(ds0_mask_b)[0]  # chunk-local indices of ds=0 entries
+                        # lag_fb_mask is (nG_fb,) bool; lag_J0w_fb is (nG_fb_lag, nlag)
+                        fb_lag_idx = np.nonzero(lag_fb_mask)[0]  # indices within fb_idx
+                        n1_ds0 = n1_arr[sl][idx0]
+                        m2_ds0 = m2_arr[sl][idx0]
+                        L1_lag = lag_L_fb[:, n1_ds0]  # (nlag, b_ds0)
+                        L2_lag = lag_L_fb[:, m2_ds0]  # (nlag, b_ds0)
+                        radial_lag = lag_J0w_fb @ (L1_lag * L2_lag)  # (nG_fb_lag, b_ds0)
+                        radial_block[np.ix_(fb_idx[fb_lag_idx], idx0)] = radial_lag
 
                 # Multiply in the N-dependent plane-wave phase and scalar prefactor.
                 val_block = (phase_N[:, None] * radial_block) * scalar_b[None, :]  # (nG, b)
 
-                # Scatter into output with advanced indexing
-                Xs[:, n1_b, m1_b, n2_b, m2_b] = val_block
-
-                # Fill symmetric partners (m2,n2,m1,n1) if pair1<pair2
-                pair1_b = n1_b * nmax + m1_b
-                pair2_b = m2_b * nmax + n2_b
-                mask_partner = pair1_b < pair2_b
-                if np.any(mask_partner):
-                    delta = (n1_b - m1_b) - (n2_b - m2_b)
-                    sign = np.where((delta & 1) == 0, 1, -1).astype(np.int8)
-                    Xs[:, m2_b[mask_partner], n2_b[mask_partner], m1_b[mask_partner], n1_b[mask_partner]] = (
-                        sign[mask_partner][None, :] * val_block[:, mask_partner]
-                    )
+                # Scatter into output
+                Xs[:, sel_idx_b] = val_block
 
     if sign_magneticfield == 1:
-        Xs = get_exchange_kernels_opposite_field(Xs)
+        phase1 = 1 - 2 * ((sel_n1 - sel_m1) & 1)
+        phase2 = 1 - 2 * ((sel_n2 - sel_m2) & 1)
+        Xs = cast(ComplexArray, Xs.conj() * (phase1 * phase2)[None, :])
 
-    return Xs
+    return Xs, select_list
 
 
 __all__ = ["get_exchange_kernels_Ogata"]

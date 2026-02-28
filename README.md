@@ -69,11 +69,25 @@ thetas = np.array([0.0, 0.0, np.pi])
 nmax = 2
 
 F = get_form_factors(Gs_dimless, thetas, nmax)          # shape (nG, nmax, nmax)
-X = get_exchange_kernels(Gs_dimless, thetas, nmax)      # default 'gausslegendre' backend
+X = get_exchange_kernels(Gs_dimless, thetas, nmax)      # default 'fock_fast' backend
 
 print("F shape:", F.shape)
 print("X shape:", X.shape)
 ```
+
+### Avoiding huge allocations
+
+The exchange kernel scales as ``nmax^4`` per ``G``. Low-level backends return a
+compressed representation ``(values, select_list)`` by default. The public
+``get_exchange_kernels`` API always materializes the full 5D tensor, but includes
+a safety guard that prevents accidental large allocations:
+
+- By default, materialization is refused if the estimated tensor size exceeds
+  ``materialize_limit_bytes`` (default 512 MiB).
+- To opt out, pass ``materialize_limit_bytes=None``.
+
+To avoid full ``nmax^4`` scaling, use ``get_exchange_kernels_compressed`` and
+provide an explicit ``select=...`` to compute only the entries you need.
 
 To use a user-provided interaction, pass a callable directly as `potential`:
 
@@ -86,7 +100,6 @@ X_coulomb = get_exchange_kernels(
     Gs_dimless,
     thetas,
     nmax,
-    method="gausslegendre",
     potential=lambda q: V_coulomb(q, kappa=1.0),
 )
 ```
@@ -122,22 +135,21 @@ A machine-readable `CITATION.cff` file is included in the repository and can be 
 
 The package provides three backends for computing exchange kernels:
 
-1. **`gausslegendre` (Default)**
-   - **Method**: Gauss-Legendre quadrature mapped from $[-1, 1]$ to $[0, \infty)$ via a rational mapping.
-   - **Pros**: Fast and numerically stable for all Landau-level indices ($n$).
-   - **Cons**: May require tuning `nquad` for extremely large momenta or indices ($n > 100$).
-   - **Recommended for**: General usage, especially for $n \ge 10$.
+1. **`fock_fast` (Default)**
+   - **Method**: Gauss-Legendre quadrature on the finite interval $[0, q_\mathrm{max}]$ with Numba-JIT form-factor tables computed via the Laguerre three-term recurrence. For large $|G|$, an optional Ogata-in-$q$-space path provides exponential convergence with $\sim\!200$ nodes.
+   - **Pros**: Numerically stable for arbitrarily large $n_\mathrm{max}$ (no intermediate overflow), adaptive node count, and optional Ogata mode for large $|G|$. Also provides a fast Fock-contraction path $\Sigma(G) = -X(G)\cdot\rho(G)$ without materializing the full kernel tensor.
+   - **Recommended for**: General usage, large $n_\mathrm{max}$ ($\gtrsim 50$), large $|G|$ ($\gtrsim 30$), and iterative Hartree–Fock workflows.
 
 2. **`hankel`**
    - **Method**: Discrete Hankel transform.
-   - **Pros**: High precision and stability.
+   - **Pros**: High precision and stability, no `numba` dependency.
    - **Cons**: Significantly slower than quadrature methods.
-   - **Recommended for**: Reference calculations and verifying the Gauss–Legendre backend.
+   - **Recommended for**: Reference calculations and cross-checking.
 
 3. **`ogata`**
-   - **Method**: Ogata quadrature for Hankel-type integrals with an automatic small-|G| fallback to Gauss–Legendre.
+   - **Method**: Ogata quadrature for Hankel-type integrals with an automatic small-|G| fallback.
    - **Pros**: Typically much faster than the discrete Hankel backend while retaining good accuracy at moderate/large |G|.
-   - **Cons**: May require tuning `ogata_h` / `kmin_ogata` for edge cases (very small |G| is handled by fallback).
+   - **Cons**: May require tuning `ogata_h` / `kmin_ogata` for edge cases.
    - **Recommended for**: Faster cross-checks against `hankel`, and workloads dominated by larger |G|.
 
 ## Notes

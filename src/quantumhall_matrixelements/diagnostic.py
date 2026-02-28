@@ -1,7 +1,7 @@
 """Diagnostic helpers for exchange-kernel symmetry checks."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
@@ -36,7 +36,7 @@ def get_form_factors_opposite_field(F: ComplexArray) -> ComplexArray:
     nmax = F.shape[1]
     idx = np.arange(nmax)
     phase = np.where((idx[:, None] - idx[None, :]) % 2 == 0, 1.0, -1.0)
-    return np.conj(F) * phase
+    return cast("ComplexArray", np.conj(F) * phase)
 
 
 def get_exchange_kernels_opposite_field(Xs: ComplexArray) -> ComplexArray:
@@ -57,7 +57,7 @@ def get_exchange_kernels_opposite_field(Xs: ComplexArray) -> ComplexArray:
     idx = np.arange(nmax)
     phase = np.where((idx[:, None] - idx[None, :]) % 2 == 0, 1.0, -1.0)
     phase = phase[:, :, None, None] * phase[None, None, :, :]
-    return np.conj(Xs) * phase
+    return cast("ComplexArray", np.conj(Xs) * phase)
 
 
 def verify_exchange_kernel_symmetries(
