@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from quantumhall_matrixelements import build_fockmatrix_apply, get_exchange_kernels_compressed, get_fockmatrix_constructor
-from quantumhall_matrixelements.fock_fast import QuadratureParams, build_exchange_fock_precompute
+from quantumhall_matrixelements.exchange_laguerre import QuadratureParams, build_exchange_fock_precompute
 
 
 def _random_hermitian_rho(nG: int, nmax: int, seed: int = 0) -> np.ndarray:
@@ -47,7 +47,7 @@ def test_fast_fock_include_minus_flag():
     assert np.allclose(Fm, -Fp)
 
 
-def test_fock_fast_backend_values_match_fast_apply():
+def test_laguerre_backend_values_match_fast_apply():
     nmax = 3
     Gs = np.array([0.0, 0.8, 1.7])
     thetas = np.array([0.0, 0.2, -0.4])
@@ -61,7 +61,7 @@ def test_fock_fast_backend_values_match_fast_apply():
         Gs,
         thetas,
         nmax,
-        method="fock_fast",
+        method="laguerre",
         potential="coulomb",
         kappa=1.0,
         qmax=params.qmax,
@@ -86,12 +86,12 @@ def test_adaptive_nquad_increases_with_large_G():
 
     # With adaptive_nquad=True (default), large G should be resolved
     vals_adapt, sel = get_exchange_kernels_compressed(
-        Gs, thetas, nmax, method="fock_fast", select=select, adaptive_nquad=True
+        Gs, thetas, nmax, method="laguerre", select=select, adaptive_nquad=True
     )
 
     # Reference: very high nquad on GL
     vals_ref, _ = get_exchange_kernels_compressed(
-        Gs, thetas, nmax, method="fock_fast", select=select,
+        Gs, thetas, nmax, method="laguerre", select=select,
         nquad=3000, adaptive_nquad=False,
     )
 
@@ -99,13 +99,13 @@ def test_adaptive_nquad_increases_with_large_G():
 
 
 def test_adaptive_nquad_matches_hankel_at_moderate_G():
-    """Adaptive fock_fast should match Hankel backend at moderate G."""
+    """Adaptive laguerre should match Hankel backend at moderate G."""
     nmax = 2
     Gs = np.array([0.5, 3.0, 10.0])
     thetas = np.array([0.0, 0.3, -0.2])
 
     vals_ff, sel_ff = get_exchange_kernels_compressed(
-        Gs, thetas, nmax, method="fock_fast", adaptive_nquad=True,
+        Gs, thetas, nmax, method="laguerre", adaptive_nquad=True,
     )
     vals_hk, sel_hk = get_exchange_kernels_compressed(
         Gs, thetas, nmax, method="hankel",
@@ -126,11 +126,11 @@ def test_ogata_q_matches_gl_at_moderate_G():
     select = [(0, 0, 0, 0), (1, 1, 1, 1), (1, 0, 1, 0), (2, 1, 2, 1)]
 
     vals_gl, sel_gl = get_exchange_kernels_compressed(
-        Gs, thetas, nmax, method="fock_fast", select=select,
+        Gs, thetas, nmax, method="laguerre", select=select,
         nquad=3000, adaptive_nquad=False, use_ogata=False,
     )
     vals_og, sel_og = get_exchange_kernels_compressed(
-        Gs, thetas, nmax, method="fock_fast", select=select,
+        Gs, thetas, nmax, method="laguerre", select=select,
         use_ogata=True, kmin_ogata=20.0,
     )
     assert sel_gl == sel_og
@@ -144,7 +144,7 @@ def test_ogata_q_matches_hankel_small_nmax():
     thetas = np.array([0.0, 0.2, -0.4])
 
     vals_og, sel_og = get_exchange_kernels_compressed(
-        Gs, thetas, nmax, method="fock_fast",
+        Gs, thetas, nmax, method="laguerre",
         use_ogata=True, kmin_ogata=10.0,
     )
     vals_hk, sel_hk = get_exchange_kernels_compressed(
@@ -162,12 +162,12 @@ def test_ogata_q_hybrid_splits_correctly():
 
     # All via GL (high nquad)
     vals_gl, sel = get_exchange_kernels_compressed(
-        Gs, thetas, nmax, method="fock_fast",
+        Gs, thetas, nmax, method="laguerre",
         nquad=3000, adaptive_nquad=False, use_ogata=False,
     )
     # Hybrid: GL for G<20, Ogata for G>=20
     vals_hyb, _ = get_exchange_kernels_compressed(
-        Gs, thetas, nmax, method="fock_fast",
+        Gs, thetas, nmax, method="laguerre",
         use_ogata=True, kmin_ogata=20.0,
     )
     # Both should agree
@@ -183,7 +183,7 @@ def test_ogata_q_large_nmax():
     select = [(0, 0, 0, 0), (nmax - 1, nmax - 1, nmax - 1, nmax - 1)]
 
     vals, sel = get_exchange_kernels_compressed(
-        Gs, thetas, nmax, method="fock_fast", select=select,
+        Gs, thetas, nmax, method="laguerre", select=select,
         use_ogata=True, kmin_ogata=10.0,
     )
     assert np.isfinite(vals).all()

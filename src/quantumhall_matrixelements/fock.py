@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 
 from .exchange_hankel import get_exchange_kernels_hankel
 from .exchange_ogata import get_exchange_kernels_Ogata
-from .fock_fast import get_exchange_kernels_fock_fast
+from .exchange_laguerre import get_exchange_kernels_laguerre
 
 ComplexArray = NDArray[np.complex128]
 RealArray = NDArray[np.float64]
@@ -191,7 +191,7 @@ def get_fockmatrix_constructor(
     nmax : int
         Landau-level cutoff.
     method : str, optional
-        Exchange-kernel backend name (``'fock_fast'``, ``'ogata'``, or ``'hankel'``).
+        Exchange-kernel backend name (``'laguerre'``, ``'ogata'``, or ``'hankel'``).
     materialize_full : bool, optional
         Deprecated/ignored; the constructor always uses the compressed format to avoid
         ``nmax^4`` allocations.
@@ -210,18 +210,18 @@ def get_fockmatrix_constructor(
         minus sign (Σ = -X·ρ); pass ``include_minus=False`` to disable it.
     """
 
-    chosen = (method or "fock_fast").strip().lower()
+    chosen = (method or "laguerre").strip().lower()
     backend: Any
     if chosen in {"hankel", "hk"}:
         backend = get_exchange_kernels_hankel
     elif chosen in {"ogata", "og"}:
         backend = get_exchange_kernels_Ogata
-    elif chosen in {"fock_fast", "fock-fast", "fast"}:
-        backend = get_exchange_kernels_fock_fast
+    elif chosen in {"laguerre", "lag"}:
+        backend = get_exchange_kernels_laguerre
     else:
         raise ValueError(
             f"Unknown exchange-kernel method: {method!r}. "
-            "Use 'fock_fast', 'ogata', or 'hankel'."
+            "Use 'laguerre', 'ogata', or 'hankel'."
         )
 
     values, select_list = cast(
@@ -255,18 +255,18 @@ def get_fockmatrix_constructor_hf(
 
         Σ^F_{n m}(G) = - Σ_{r,t} X_{m r n t}(G) ρ^*_{t r}(G).
     """
-    chosen = (method or "fock_fast").strip().lower()
+    chosen = (method or "laguerre").strip().lower()
     backend: Any
     if chosen in {"hankel", "hk"}:
         backend = get_exchange_kernels_hankel
     elif chosen in {"ogata", "og"}:
         backend = get_exchange_kernels_Ogata
-    elif chosen in {"fock_fast", "fock-fast", "fast"}:
-        backend = get_exchange_kernels_fock_fast
+    elif chosen in {"laguerre", "lag"}:
+        backend = get_exchange_kernels_laguerre
     else:
         raise ValueError(
             f"Unknown exchange-kernel method: {method!r}. "
-            "Use 'fock_fast', 'ogata', or 'hankel'."
+            "Use 'laguerre', 'ogata', or 'hankel'."
         )
 
     values, select_list = cast(

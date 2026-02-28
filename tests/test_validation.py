@@ -6,7 +6,7 @@ from quantumhall_matrixelements.diagnostic import verify_exchange_kernel_symmetr
 
 def test_cross_backend_consistency():
     """
-    Verify that 'fock_fast' and 'hankel' backends produce consistent results.
+    Verify that 'laguerre' and 'hankel' backends produce consistent results.
     """
     nmax = 6
     # Use a non-trivial set of G vectors
@@ -15,14 +15,14 @@ def test_cross_backend_consistency():
     thetas = np.array([0.0, 0.2, np.pi])
 
     X_ff = get_exchange_kernels(
-        Gs_dimless, thetas, nmax, method="fock_fast", sign_magneticfield=-1
+        Gs_dimless, thetas, nmax, method="laguerre", sign_magneticfield=-1
     )
     X_hk = get_exchange_kernels(
         Gs_dimless, thetas, nmax, method="hankel", sign_magneticfield=-1
     )
 
     assert np.allclose(X_ff, X_hk, rtol=3e-3, atol=3e-3), \
-        "Mismatch between fock_fast and Hankel backends"
+        "Mismatch between laguerre and Hankel backends"
 
 def test_large_n_consistency():
     """
@@ -33,7 +33,7 @@ def test_large_n_consistency():
     thetas = np.array([0.0, 0.2, np.pi])
 
     X_ff = get_exchange_kernels(
-        Gs_dimless, thetas, nmax, method="fock_fast", sign_magneticfield=-1
+        Gs_dimless, thetas, nmax, method="laguerre", sign_magneticfield=-1
     )
     X_hk = get_exchange_kernels(
         Gs_dimless,
@@ -65,13 +65,13 @@ def test_analytic_coulomb_limit_zero_G():
     # Expected value: sqrt(pi/2)
     expected = np.sqrt(np.pi / 2.0)
     
-    # Check fock_fast
+    # Check laguerre
     X_ff = get_exchange_kernels(
-        Gs_dimless, thetas, nmax, method="fock_fast", sign_magneticfield=-1
+        Gs_dimless, thetas, nmax, method="laguerre", sign_magneticfield=-1
     )
     val_ff = X_ff[0, 0, 0, 0, 0]
     assert np.isclose(val_ff, expected, atol=5e-4), \
-        f"fock_fast failed analytic limit. Got {val_ff}, expected {expected}"
+        f"laguerre failed analytic limit. Got {val_ff}, expected {expected}"
 
     # Check Hankel
     X_hk = get_exchange_kernels(Gs_dimless, thetas, nmax, method="hankel", sign_magneticfield=-1)
@@ -91,9 +91,9 @@ def test_symmetry_checks_extended():
     # This function asserts internally if symmetries are violated
     verify_exchange_kernel_symmetries(Gs_dimless, thetas, nmax, rtol=1e-6, atol=1e-8)
 
-def test_fock_fast_convergence():
+def test_laguerre_convergence():
     """
-    Verify fock_fast quadrature converges as nquad increases.
+    Verify laguerre quadrature converges as nquad increases.
     """
     nmax = 2
     Gs_dimless = np.array([1.0])
@@ -103,7 +103,7 @@ def test_fock_fast_convergence():
         Gs_dimless,
         thetas,
         nmax,
-        method="fock_fast",
+        method="laguerre",
         nquad=200,
         sign_magneticfield=-1,
     )
@@ -111,13 +111,13 @@ def test_fock_fast_convergence():
         Gs_dimless,
         thetas,
         nmax,
-        method="fock_fast",
+        method="laguerre",
         nquad=400,
         sign_magneticfield=-1,
     )
 
     assert np.allclose(X_low, X_high, rtol=3e-3, atol=2e-3), \
-        "fock_fast quadrature not converged between nquad=200 and nquad=400"
+        "laguerre quadrature not converged between nquad=200 and nquad=400"
 
 
 def test_hankel_callable_potential_matches_coulomb():

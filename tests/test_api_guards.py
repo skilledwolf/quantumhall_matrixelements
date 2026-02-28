@@ -13,7 +13,7 @@ def test_materialize_guard_auto_raises():
             Gs,
             thetas,
             3,
-            method="fock_fast",
+            method="laguerre",
             nquad=40,
             materialize_limit_bytes=1,
         )
@@ -27,7 +27,7 @@ def test_materialize_limit_none_bypasses_guard():
         Gs,
         thetas,
         2,
-        method="fock_fast",
+        method="laguerre",
         nquad=40,
         materialize_limit_bytes=None,
     )
@@ -43,7 +43,7 @@ def test_canonical_select_guard_raises():
             Gs,
             thetas,
             2,
-            method="fock_fast",
+            method="laguerre",
             nquad=40,
             canonical_select_max_entries=1,
         )
@@ -57,7 +57,7 @@ def test_canonical_select_guard_is_bypassed_for_explicit_select():
         Gs,
         thetas,
         2,
-        method="fock_fast",
+        method="laguerre",
         nquad=40,
         select=[(0, 0, 0, 0)],
         canonical_select_max_entries=1,
@@ -75,7 +75,7 @@ def test_get_exchange_kernels_full_matches_compressed_roundtrip():
         Gs,
         thetas,
         nmax,
-        method="fock_fast",
+        method="laguerre",
         nquad=80,
     )
     from quantumhall_matrixelements._materialize import materialize_full_tensor
@@ -85,7 +85,7 @@ def test_get_exchange_kernels_full_matches_compressed_roundtrip():
         Gs,
         thetas,
         nmax,
-        method="fock_fast",
+        method="laguerre",
         nquad=80,
     )
     assert np.allclose(X_full, X_round)

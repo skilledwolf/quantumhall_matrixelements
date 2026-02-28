@@ -56,7 +56,7 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--warmup", type=int, default=1)
-    parser.add_argument("--nquad", type=int, default=800, help="fock_fast nquad for perf runs")
+    parser.add_argument("--nquad", type=int, default=800, help="laguerre nquad for perf runs")
     args = parser.parse_args()
 
     rng = np.random.default_rng(args.seed)
@@ -71,12 +71,12 @@ def main() -> int:
 
     X_hk = get_exchange_kernels(kvals, thetas, nmax, method="hankel")
     X_og = get_exchange_kernels(kvals, thetas, nmax, method="ogata")
-    X_ff = get_exchange_kernels(kvals, thetas, nmax, method="fock_fast")
+    X_ff = get_exchange_kernels(kvals, thetas, nmax, method="laguerre")
 
     print("Accuracy vs hankel (max abs error per |G|ℓ):")
     print("  k:", kvals)
     print("  ogata:", _per_g_max_abs_err(X_og, X_hk))
-    print("  fock_fast:", _per_g_max_abs_err(X_ff, X_hk))
+    print("  laguerre:", _per_g_max_abs_err(X_ff, X_hk))
 
     # -----------------------------
     # Performance comparison
@@ -94,7 +94,7 @@ def main() -> int:
 
         t_ff = _time_call(
             lambda: get_exchange_kernels(
-                G_mags, G_angles, nmax, method="fock_fast", nquad=int(args.nquad)
+                G_mags, G_angles, nmax, method="laguerre", nquad=int(args.nquad)
             ),
             repeats=int(args.repeats),
             warmup=int(args.warmup),
@@ -106,7 +106,7 @@ def main() -> int:
         )
 
         print(f"  {name}")
-        print(f"    fock_fast nquad={int(args.nquad)}: {t_ff.t_min:.3f}s min  {t_ff.t_mean:.3f}s mean")
+        print(f"    laguerre nquad={int(args.nquad)}: {t_ff.t_min:.3f}s min  {t_ff.t_mean:.3f}s mean")
         print(f"    ogata (defaults):          {t_og.t_min:.3f}s min  {t_og.t_mean:.3f}s mean")
 
     return 0

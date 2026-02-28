@@ -56,7 +56,7 @@ def test_lll_closed_form_select():
         Gs,
         angles,
         1,
-        method="fock_fast",
+        method="laguerre",
         select=select,
     )
     assert select_list == select
@@ -71,7 +71,7 @@ def test_select_matches_full_small():
     select = [(0, 0, 0, 0), (1, 1, 1, 1), (1, 0, 1, 0)]
 
     for method, kwargs in [
-        ("fock_fast", {}),
+        ("laguerre", {}),
         ("ogata", {"nquad": 400}),
         ("hankel", {}),
     ]:
@@ -93,7 +93,7 @@ def test_select_matches_full_small():
             )
 
 
-def test_n100_backend_sweep_fock_fast_ogata():
+def test_n100_backend_sweep_laguerre_ogata():
     n = 100
     Gs = np.array([0.0, 5.0, 10.0, 15.0, 20.0, 25.0], dtype=float)
     angles = np.zeros_like(Gs)
@@ -108,7 +108,7 @@ def test_n100_backend_sweep_fock_fast_ogata():
         Gs,
         angles,
         n + 1,
-        method="fock_fast",
+        method="laguerre",
         select=select,
     )
     values_og, select_og = get_exchange_kernels_compressed(

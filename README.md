@@ -69,7 +69,7 @@ thetas = np.array([0.0, 0.0, np.pi])
 nmax = 2
 
 F = get_form_factors(Gs_dimless, thetas, nmax)          # shape (nG, nmax, nmax)
-X = get_exchange_kernels(Gs_dimless, thetas, nmax)      # default 'fock_fast' backend
+X = get_exchange_kernels(Gs_dimless, thetas, nmax)      # default 'laguerre' backend
 
 print("F shape:", F.shape)
 print("X shape:", X.shape)
@@ -135,7 +135,7 @@ A machine-readable `CITATION.cff` file is included in the repository and can be 
 
 The package provides three backends for computing exchange kernels:
 
-1. **`fock_fast` (Default)**
+1. **`laguerre` (Default)**
    - **Method**: Gauss-Legendre quadrature on the finite interval $[0, q_\mathrm{max}]$ with Numba-JIT form-factor tables computed via the Laguerre three-term recurrence. For large $|G|$, an optional Ogata-in-$q$-space path provides exponential convergence with $\sim\!200$ nodes.
    - **Pros**: Numerically stable for arbitrarily large $n_\mathrm{max}$ (no intermediate overflow), adaptive node count, and optional Ogata mode for large $|G|$. Also provides a fast Fock-contraction path $\Sigma(G) = -X(G)\cdot\rho(G)$ without materializing the full kernel tensor.
    - **Recommended for**: General usage, large $n_\mathrm{max}$ ($\gtrsim 50$), large $|G|$ ($\gtrsim 30$), and iterative Hartree–Fock workflows.

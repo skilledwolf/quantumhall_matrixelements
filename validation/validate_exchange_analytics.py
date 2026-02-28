@@ -164,7 +164,7 @@ def _print_table(Gs: np.ndarray, values: np.ndarray, refs: np.ndarray, rtol: flo
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--method", default="fock_fast", help="Backend method.")
+    parser.add_argument("--method", default="laguerre", help="Backend method.")
     parser.add_argument("--nmax", type=int, default=8, help="nmax for G=0 checks and selection rule.")
     parser.add_argument("--kappa", type=float, default=1.0)
     parser.add_argument("--sign", type=int, default=-1, dest="sign_magneticfield")

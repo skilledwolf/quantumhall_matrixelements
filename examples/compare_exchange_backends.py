@@ -1,11 +1,11 @@
 """Compare exchange-kernel backends: accuracy and timing.
 
 This script computes exchange kernels with all three public backends
-(fock_fast, ogata, hankel) and plots:
+(laguerre, ogata, hankel) and plots:
   1. Relative error of each backend vs the Hankel reference.
   2. Wall-clock timing comparison at large nmax.
 
-It demonstrates fock_fast's numerical stability at large nmax
+It demonstrates laguerre's numerical stability at large nmax
 and the Ogata-in-q-space path for large |G|.
 """
 from __future__ import annotations
@@ -54,8 +54,8 @@ def main() -> None:
     backends_mod = {}
     for label, kw in [
         ("ogata", dict(method="ogata")),
-        ("fock_fast (GL)", dict(method="fock_fast", use_ogata=False)),
-        ("fock_fast (hybrid)", dict(method="fock_fast", use_ogata=True, kmin_ogata=10.0)),
+        ("laguerre (GL)", dict(method="laguerre", use_ogata=False)),
+        ("laguerre (hybrid)", dict(method="laguerre", use_ogata=True, kmin_ogata=10.0)),
     ]:
         v, _, t = _timed_compressed(
             Gs_mod, thetas_mod, nmax_mod, select_mod, **kw,
@@ -85,8 +85,8 @@ def main() -> None:
 
     backends_large: dict[str, tuple[float, float]] = {}
     for label, kw in [
-        ("fock_fast (GL)", dict(method="fock_fast", use_ogata=False)),
-        ("fock_fast (hybrid)", dict(method="fock_fast", use_ogata=True, kmin_ogata=10.0)),
+        ("laguerre (GL)", dict(method="laguerre", use_ogata=False)),
+        ("laguerre (hybrid)", dict(method="laguerre", use_ogata=True, kmin_ogata=10.0)),
     ]:
         v, _, t = _timed_compressed(
             Gs_large, thetas_large, nmax_large, select_large, **kw,

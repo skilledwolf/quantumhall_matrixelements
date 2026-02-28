@@ -19,13 +19,13 @@ def test_fock_constructor_matches_full_tensor_contraction():
     Gs = np.array([0.0, 1.2])
     thetas = np.array([0.0, 0.3])
 
-    X_full = get_exchange_kernels(Gs, thetas, nmax, method="fock_fast", nquad=400)
+    X_full = get_exchange_kernels(Gs, thetas, nmax, method="laguerre", nquad=400)
     rho = _random_hermitian_rho(len(Gs), nmax, seed=1)
 
     # Reference: Σ_{n2,m2} = - Σ_{n1,m1} X_{n1,m1,n2,m2} ρ_{n1,m1}
     ref = -np.einsum("gnm,gnmrt->grt", rho, X_full, optimize=True)
 
-    fock = get_fockmatrix_constructor(Gs, thetas, nmax, method="fock_fast", nquad=400)
+    fock = get_fockmatrix_constructor(Gs, thetas, nmax, method="laguerre", nquad=400)
     out = fock(rho)
 
     assert np.allclose(out, ref, rtol=1e-10, atol=1e-12)
@@ -36,7 +36,7 @@ def test_fock_constructor_hf_matches_full_tensor_contraction():
     Gs = np.array([0.0, 1.2])
     thetas = np.array([0.0, 0.3])
 
-    X_full = get_exchange_kernels(Gs, thetas, nmax, method="fock_fast", nquad=400)
+    X_full = get_exchange_kernels(Gs, thetas, nmax, method="laguerre", nquad=400)
     rng = np.random.default_rng(2)
     rho = rng.normal(size=(len(Gs), nmax, nmax)) + 1j * rng.normal(size=(len(Gs), nmax, nmax))
     rho = rho.astype(np.complex128, copy=False)
@@ -45,7 +45,7 @@ def test_fock_constructor_hf_matches_full_tensor_contraction():
     #   Σ_{n2,n1}(G) = - Σ_{m1,m2} X_{n1,m1,n2,m2}(G) ρ^*_{m2,m1}(G)
     ref = -np.einsum("gpqrs,gsq->grp", X_full, rho.conj(), optimize=True)
 
-    fock = get_fockmatrix_constructor_hf(Gs, thetas, nmax, method="fock_fast", nquad=400)
+    fock = get_fockmatrix_constructor_hf(Gs, thetas, nmax, method="laguerre", nquad=400)
     out_minus = fock(rho, include_minus=True)
     out_plus = fock(rho, include_minus=False)
 

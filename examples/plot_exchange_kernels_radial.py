@@ -30,7 +30,7 @@ def main() -> None:
 
     ax.set_xlabel(r"$|G| \ell_B$")
     ax.set_ylabel(r"$\mathrm{Re}\,X_{nnnn}(G)$  (κ=1)")
-    ax.set_title("Diagonal exchange kernels (fock_fast backend)")
+    ax.set_title("Diagonal exchange kernels (laguerre backend)")
     ax.legend()
     ax.grid(True, alpha=0.3)
     fig.tight_layout()

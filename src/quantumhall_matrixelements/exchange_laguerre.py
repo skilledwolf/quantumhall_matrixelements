@@ -244,7 +244,7 @@ def _exchange_fock_numba(
 
 
 @njit(parallel=True, fastmath=False)  # type: ignore[misc]
-def _evaluate_exchange_kernels_fock_fast_numba(
+def _evaluate_exchange_kernels_laguerre_numba(
     R: RealArray,
     w_eff: RealArray,
     kernels: RealArray,
@@ -510,7 +510,7 @@ def build_exchange_fock_precompute(
     )
 
 
-def get_exchange_kernels_fock_fast(
+def get_exchange_kernels_laguerre(
     G_magnitudes: RealArray,
     G_angles: RealArray,
     nmax: int,
@@ -655,7 +655,7 @@ def get_exchange_kernels_fock_fast(
 
         vals_gl = cast(
             ComplexArray,
-            _evaluate_exchange_kernels_fock_fast_numba(
+            _evaluate_exchange_kernels_laguerre_numba(
                 R,
                 w_eff,
                 kernels,
@@ -747,5 +747,5 @@ __all__ = [
     "ExchangeFockPrecompute",
     "build_exchange_fock_precompute",
     "cartesian_to_polar",
-    "get_exchange_kernels_fock_fast",
+    "get_exchange_kernels_laguerre",
 ]

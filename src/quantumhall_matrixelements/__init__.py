@@ -28,11 +28,11 @@ from .diagnostic import get_exchange_kernels_opposite_field, get_form_factors_op
 from .exchange_hankel import get_exchange_kernels_hankel
 from .exchange_ogata import get_exchange_kernels_Ogata
 from .fock import build_fockmatrix_apply, get_fockmatrix_constructor, get_fockmatrix_constructor_hf
-from .fock_fast import (
+from .exchange_laguerre import (
     ExchangeFockPrecompute,
     QuadratureParams,
     build_exchange_fock_precompute,
-    get_exchange_kernels_fock_fast,
+    get_exchange_kernels_laguerre,
 )
 from .planewave import get_form_factors
 
@@ -63,7 +63,7 @@ def get_exchange_kernels(
     method :
         Backend selector:
 
-        - ``'fock_fast'`` (default): Numba-JIT quadrature on [0, qmax] with
+        - ``'laguerre'`` (default): Numba-JIT quadrature on [0, qmax] with
           Laguerre three-term recurrence. Stable for all nmax and |G|.
         - ``'ogata'``: Ogata quadrature (Hankel/Ogata) with an automatic small-|G|
           fallback.
@@ -92,18 +92,18 @@ def get_exchange_kernels(
     To compute only a small set of entries without allocating the full tensor,
     use :func:`get_exchange_kernels_compressed` with an explicit ``select=...``.
     """
-    chosen = (method or "fock_fast").strip().lower()
+    chosen = (method or "laguerre").strip().lower()
     backend_fn: Any
     if chosen in {"hankel", "hk"}:
         backend_fn = get_exchange_kernels_hankel
     elif chosen in {"ogata", "og"}:
         backend_fn = get_exchange_kernels_Ogata
-    elif chosen in {"fock_fast", "fock-fast", "fast"}:
-        backend_fn = get_exchange_kernels_fock_fast
+    elif chosen in {"laguerre", "lag"}:
+        backend_fn = get_exchange_kernels_laguerre
     else:
         raise ValueError(
             f"Unknown exchange-kernel method: {method!r}. "
-            "Use 'fock_fast', 'ogata', or 'hankel'."
+            "Use 'laguerre', 'ogata', or 'hankel'."
         )
 
     G_magnitudes = np.asarray(G_magnitudes, dtype=float).ravel()
@@ -150,18 +150,18 @@ def get_exchange_kernels_compressed(
     Unlike :func:`get_exchange_kernels`, this function never materializes the full
     5D tensor, and always returns the select list used by the backend.
     """
-    chosen = (method or "fock_fast").strip().lower()
+    chosen = (method or "laguerre").strip().lower()
     backend_fn: Any
     if chosen in {"hankel", "hk"}:
         backend_fn = get_exchange_kernels_hankel
     elif chosen in {"ogata", "og"}:
         backend_fn = get_exchange_kernels_Ogata
-    elif chosen in {"fock_fast", "fock-fast", "fast"}:
-        backend_fn = get_exchange_kernels_fock_fast
+    elif chosen in {"laguerre", "lag"}:
+        backend_fn = get_exchange_kernels_laguerre
     else:
         raise ValueError(
             f"Unknown exchange-kernel method: {method!r}. "
-            "Use 'fock_fast', 'ogata', or 'hankel'."
+            "Use 'laguerre', 'ogata', or 'hankel'."
         )
 
     G_magnitudes = np.asarray(G_magnitudes, dtype=float).ravel()
@@ -197,7 +197,7 @@ __all__ = [
     "get_exchange_kernels_opposite_field",
     "get_exchange_kernels_hankel",
     "get_exchange_kernels_Ogata",
-    "get_exchange_kernels_fock_fast",
+    "get_exchange_kernels_laguerre",
     "build_fockmatrix_apply",
     "get_fockmatrix_constructor",
     "get_fockmatrix_constructor_hf",

@@ -3,7 +3,7 @@ from __future__ import annotations
 import mpmath as mp
 import numpy as np
 
-from quantumhall_matrixelements.fock_fast import QuadratureParams, build_exchange_fock_precompute
+from quantumhall_matrixelements.exchange_laguerre import QuadratureParams, build_exchange_fock_precompute
 
 
 def _numeric_X_element(pre, g: int, n1: int, m1: int, n2: int, m2: int) -> complex:

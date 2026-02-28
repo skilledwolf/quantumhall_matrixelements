@@ -11,7 +11,7 @@ def test_exchange_kernel_basic_shape_and_real_N0():
     Gs_dimless = np.array([0.0, 1.0, 1.0])
     thetas = np.array([0.0, 0.0, np.pi])
 
-    X = get_exchange_kernels(Gs_dimless, thetas, nmax, method="fock_fast")
+    X = get_exchange_kernels(Gs_dimless, thetas, nmax, method="laguerre")
     assert X.shape == (3, nmax, nmax, nmax, nmax)
 
     # N=0 sectors at G0 should be real (imag ~ 0)
@@ -46,14 +46,14 @@ def test_exchange_kernel_sign_magneticfield_phase_relation():
         Gs_dimless,
         thetas,
         nmax,
-        method="fock_fast",
+        method="laguerre",
         sign_magneticfield=-1,
     )
     X_pos = get_exchange_kernels(
         Gs_dimless,
         thetas,
         nmax,
-        method="fock_fast",
+        method="laguerre",
         sign_magneticfield=+1,
     )
 
@@ -75,12 +75,12 @@ def test_exchange_kernel_compressed_roundtrip_matches_full():
         Gs_dimless,
         thetas,
         nmax,
-        method="fock_fast",
+        method="laguerre",
     )
     assert values.shape[0] == Gs_dimless.size
     assert len(select_list) == values.shape[1]
     # round-trip materialization matches default path
-    X_full = get_exchange_kernels(Gs_dimless, thetas, nmax, method="fock_fast")
+    X_full = get_exchange_kernels(Gs_dimless, thetas, nmax, method="laguerre")
     from quantumhall_matrixelements._materialize import materialize_full_tensor
     X_round = materialize_full_tensor(values, select_list, nmax)
     assert np.allclose(X_full, X_round)
