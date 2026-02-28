@@ -1,19 +1,17 @@
 """Plane-wave form factors F_{n',n}(G) in a Landau-level basis."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import cast
 
 import numpy as np
+from numpy.typing import NDArray
 from scipy.special import eval_genlaguerre, gammaln
 
 from .diagnostic import get_form_factors_opposite_field
 
-if TYPE_CHECKING:
-    from numpy.typing import NDArray
-
-    ComplexArray = NDArray[np.complex128]
-    RealArray = NDArray[np.float64]
-    IntArray = NDArray[np.int64]
+ComplexArray = NDArray[np.complex128]
+RealArray = NDArray[np.float64]
+IntArray = NDArray[np.int64]
 
 def _analytic_form_factor(
     n_row: IntArray,
@@ -54,7 +52,7 @@ def _analytic_form_factor(
         * laguerre_poly
         * np.exp(-0.5 * arg_z)
     )
-    return F
+    return cast(ComplexArray, F)
 
 def get_form_factors(
     q_magnitudes: RealArray,
@@ -86,12 +84,16 @@ def get_form_factors(
     """
     if sign_magneticfield not in (1, -1):
         raise ValueError("sign_magneticfield must be 1 or -1")
+    q_magnitudes = np.asarray(q_magnitudes, dtype=float).ravel()
+    q_angles = np.asarray(q_angles, dtype=float).ravel()
+    if q_magnitudes.shape != q_angles.shape:
+        raise ValueError("q_magnitudes and q_angles must have the same shape.")
     n_indices = np.arange(nmax)
     F = _analytic_form_factor(
         n_row=n_indices[None, :, None],
         n_col=n_indices[None, None, :],
-        q_magnitudes=np.asarray(q_magnitudes)[:, None, None],
-        q_angles=np.asarray(q_angles)[:, None, None],
+        q_magnitudes=q_magnitudes[:, None, None],
+        q_angles=q_angles[:, None, None],
         lB=lB
     ).astype(np.complex128)
 

@@ -11,13 +11,13 @@ authors = [
   { name = "Sparsh Mishra" }
 ]
 license = { text = "MIT" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = ["quantum Hall", "matrix elements", "form factors", "exchange kernels", "Landau levels"]
 classifiers = [
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "License :: OSI Approved :: MIT License",
   "Intended Audience :: Science/Research",
   "Topic :: Scientific/Engineering :: Physics"
@@ -25,7 +25,8 @@ classifiers = [
 dependencies = [
   "numpy>=1.26",
   "scipy>=1.11",
-  "hankel>=1.2"
+  "hankel>=1.2",
+  "numba>=0.59"
 ]
 
 dynamic = ["version"]
@@ -36,6 +37,7 @@ dev = [
   "pytest-cov>=5.0",
   "ruff>=0.5.0",
   "mypy>=1.10",
+  "mpmath>=1.3",
   "build",
   "twine"
 ]
@@ -54,21 +56,27 @@ where = ["src"]
 
 [tool.ruff]
 line-length = 100
+extend-exclude = ["examples", "playground", "validation", "*.ipynb"]
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "NPY", "PERF"]
 ignore = ["E203"]
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = ["quantumhall_matrixelements"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
 addopts = "-ra -q --cov=quantumhall_matrixelements --cov-report=term-missing"
 testpaths = ["tests"]
+markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 strict = true
 ignore_missing_imports = true
+files = ["src/quantumhall_matrixelements"]
+exclude = "^(playground/|tests/|validation/|examples/)"
 
 [tool.coverage.run]
 branch = true

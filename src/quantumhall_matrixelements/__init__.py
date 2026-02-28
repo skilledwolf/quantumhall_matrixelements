@@ -10,22 +10,35 @@ elements in a Landau-level basis:
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _metadata_version
-from typing import TYPE_CHECKING
+from typing import Any, cast
 
 import numpy as np
+from numpy.typing import NDArray
 
+from ._materialize import (
+    DEFAULT_FULL_TENSOR_LIMIT_BYTES,
+    guard_full_tensor_materialization,
+    materialize_full_tensor,
+)
+from ._select import DEFAULT_CANONICAL_SELECT_MAX_ENTRIES
 from .diagnostic import get_exchange_kernels_opposite_field, get_form_factors_opposite_field
 from .exchange_hankel import get_exchange_kernels_hankel
-from .exchange_legendre import get_exchange_kernels_GaussLegendre
+from .exchange_ogata import get_exchange_kernels_Ogata
+from .fock import build_fockmatrix_apply, get_fockmatrix_constructor, get_fockmatrix_constructor_hf
+from .exchange_laguerre import (
+    ExchangeFockPrecompute,
+    QuadratureParams,
+    build_exchange_fock_precompute,
+    get_exchange_kernels_laguerre,
+)
 from .planewave import get_form_factors
 
-if TYPE_CHECKING:
-    from numpy.typing import NDArray
-
-    ComplexArray = NDArray[np.complex128]
-    RealArray = NDArray[np.float64]
+ComplexArray = NDArray[np.complex128]
+RealArray = NDArray[np.float64]
+Quad = tuple[int, int, int, int]
 
 
 def get_exchange_kernels(
@@ -34,9 +47,11 @@ def get_exchange_kernels(
     nmax: int,
     *,
     method: str | None = None,
-    **kwargs,
+    materialize_limit_bytes: float | int | None = DEFAULT_FULL_TENSOR_LIMIT_BYTES,
+    canonical_select_max_entries: int | None = DEFAULT_CANONICAL_SELECT_MAX_ENTRIES,
+    **kwargs: Any,
 ) -> ComplexArray:
-    """Dispatcher for exchange kernels.
+    """Compute and return the fully materialized 5D exchange tensor.
 
     Parameters
     ----------
@@ -48,9 +63,20 @@ def get_exchange_kernels(
     method :
         Backend selector:
 
-        - ``'gausslegendre'`` (default): Gauss-Legendre quadrature with rational mapping.
-          Recommended for all nmax.
-        - ``'hankel'``: Hankel-transform based implementation.
+        - ``'laguerre'`` (default): Numba-JIT quadrature on [0, qmax] with
+          Laguerre three-term recurrence. Stable for all nmax and |G|.
+        - ``'ogata'``: Ogata quadrature (Hankel/Ogata) with an automatic small-|G|
+          fallback.
+        - ``'hankel'``: Hankel-transform based implementation (slow but precise).
+
+    materialize_limit_bytes :
+        Soft cap (in bytes) for allocating a full ``(nG, nmax, nmax, nmax, nmax)``
+        complex tensor. Pass ``None`` to disable this safety check.
+
+    canonical_select_max_entries :
+        Soft cap on the number of canonical select entries constructed when
+        ``select`` is omitted. This prevents accidentally building huge Python
+        lists with O(nmax^4) entries.
 
     **kwargs :
         Additional arguments passed to the backend (e.g. ``nquad``, ``scale``).
@@ -59,15 +85,101 @@ def get_exchange_kernels(
 
     Notes
     -----
-    Both backends return kernels normalized for :math:`\\kappa = 1`. Any
-    physical interaction strength should be applied by the caller.
+    For the built-in potentials ``'coulomb'`` and ``'constant'``, the ``kappa``
+    keyword scales the kernel. For callable potentials, the provided function
+    defines the overall energy scale.
+
+    To compute only a small set of entries without allocating the full tensor,
+    use :func:`get_exchange_kernels_compressed` with an explicit ``select=...``.
     """
-    chosen = (method or "gausslegendre").strip().lower()
+    chosen = (method or "laguerre").strip().lower()
+    backend_fn: Any
     if chosen in {"hankel", "hk"}:
-        return get_exchange_kernels_hankel(G_magnitudes, G_angles, nmax, **kwargs)
-    if chosen in {"gausslegendre", "gauss-legendre", "legendre", "leg"}:
-        return get_exchange_kernels_GaussLegendre(G_magnitudes, G_angles, nmax, **kwargs)
-    raise ValueError(f"Unknown exchange-kernel method: {method!r}. Use 'gausslegendre' or 'hankel'.")
+        backend_fn = get_exchange_kernels_hankel
+    elif chosen in {"ogata", "og"}:
+        backend_fn = get_exchange_kernels_Ogata
+    elif chosen in {"laguerre", "lag"}:
+        backend_fn = get_exchange_kernels_laguerre
+    else:
+        raise ValueError(
+            f"Unknown exchange-kernel method: {method!r}. "
+            "Use 'laguerre', 'ogata', or 'hankel'."
+        )
+
+    G_magnitudes = np.asarray(G_magnitudes, dtype=float).ravel()
+    G_angles = np.asarray(G_angles, dtype=float).ravel()
+    if G_magnitudes.shape != G_angles.shape:
+        raise ValueError("G_magnitudes and G_angles must have the same shape.")
+
+    # Fast-fail before expensive backend work if we'd materialize a huge tensor.
+    guard_full_tensor_materialization(
+        select=None,
+        nmax=int(nmax),
+        nG=int(G_magnitudes.size),
+        materialize_full="auto",
+        materialize_limit_bytes=materialize_limit_bytes,
+        backend_name=f"{chosen} exchange kernels",
+    )
+
+    values, select_list = cast(
+        tuple[ComplexArray, list[Quad]],
+        backend_fn(
+            G_magnitudes,
+            G_angles,
+            nmax,
+            select=None,
+            canonical_select_max_entries=canonical_select_max_entries,
+            **kwargs,
+        ),
+    )
+    return materialize_full_tensor(values, select_list, nmax)
+
+
+def get_exchange_kernels_compressed(
+    G_magnitudes: RealArray,
+    G_angles: RealArray,
+    nmax: int,
+    *,
+    method: str | None = None,
+    select: Iterable[Quad] | None = None,
+    canonical_select_max_entries: int | None = DEFAULT_CANONICAL_SELECT_MAX_ENTRIES,
+    **kwargs: Any,
+) -> tuple[ComplexArray, list[Quad]]:
+    """Return the compressed exchange-kernel representation ``(values, select_list)``.
+
+    Unlike :func:`get_exchange_kernels`, this function never materializes the full
+    5D tensor, and always returns the select list used by the backend.
+    """
+    chosen = (method or "laguerre").strip().lower()
+    backend_fn: Any
+    if chosen in {"hankel", "hk"}:
+        backend_fn = get_exchange_kernels_hankel
+    elif chosen in {"ogata", "og"}:
+        backend_fn = get_exchange_kernels_Ogata
+    elif chosen in {"laguerre", "lag"}:
+        backend_fn = get_exchange_kernels_laguerre
+    else:
+        raise ValueError(
+            f"Unknown exchange-kernel method: {method!r}. "
+            "Use 'laguerre', 'ogata', or 'hankel'."
+        )
+
+    G_magnitudes = np.asarray(G_magnitudes, dtype=float).ravel()
+    G_angles = np.asarray(G_angles, dtype=float).ravel()
+    if G_magnitudes.shape != G_angles.shape:
+        raise ValueError("G_magnitudes and G_angles must have the same shape.")
+
+    return cast(
+        tuple[ComplexArray, list[Quad]],
+        backend_fn(
+            G_magnitudes,
+            G_angles,
+            nmax,
+            select=select,
+            canonical_select_max_entries=canonical_select_max_entries,
+            **kwargs,
+        ),
+    )
 
 
 try:
@@ -79,8 +191,18 @@ except PackageNotFoundError:  # pragma: no cover - fallback for local, non-insta
 
 __all__ = [
     "get_form_factors",
+    "get_form_factors_opposite_field",
     "get_exchange_kernels",
+    "get_exchange_kernels_compressed",
+    "get_exchange_kernels_opposite_field",
     "get_exchange_kernels_hankel",
-    "get_exchange_kernels_GaussLegendre",
+    "get_exchange_kernels_Ogata",
+    "get_exchange_kernels_laguerre",
+    "build_fockmatrix_apply",
+    "get_fockmatrix_constructor",
+    "get_fockmatrix_constructor_hf",
+    "QuadratureParams",
+    "ExchangeFockPrecompute",
+    "build_exchange_fock_precompute",
     "__version__",
 ]
