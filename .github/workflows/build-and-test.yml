@@ -46,7 +46,7 @@ jobs:
 
       - name: Type check
         run: |
-          mypy .
+          mypy
 
       - name: Run tests
         run: |
