@@ -1,8 +1,15 @@
 import numpy as np
 import pytest
 
-from quantumhall_matrixelements import build_fockmatrix_apply, get_exchange_kernels_compressed, get_fockmatrix_constructor
-from quantumhall_matrixelements.exchange_laguerre import QuadratureParams, build_exchange_fock_precompute
+from quantumhall_matrixelements import (
+    build_fockmatrix_apply,
+    get_exchange_kernels_compressed,
+    get_fockmatrix_constructor,
+)
+from quantumhall_matrixelements.exchange_laguerre import (
+    QuadratureParams,
+    build_exchange_fock_precompute,
+)
 
 
 def _random_hermitian_rho(nG: int, nmax: int, seed: int = 0) -> np.ndarray:

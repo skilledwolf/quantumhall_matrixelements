@@ -459,7 +459,7 @@ def get_exchange_kernels_hankel(
     if sign_magneticfield == 1:
         phase1 = 1 - 2 * ((sel_n1 - sel_m1) & 1)
         phase2 = 1 - 2 * ((sel_n2 - sel_m2) & 1)
-        Xs = cast(ComplexArray, Xs.conj() * (phase1 * phase2)[None, :])
+        Xs = Xs.conj() * (phase1 * phase2)[None, :]
 
     return Xs, select_list
 

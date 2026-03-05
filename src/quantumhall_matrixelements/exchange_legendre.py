@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
     ComplexArray = NDArray[np.complex128]
     RealArray = NDArray[np.float64]
+    BoolArray = NDArray[np.bool_]
     IntArray = NDArray[np.int64]
     Int8Array = NDArray[np.int8]
 
@@ -84,7 +85,7 @@ class LegendrePrecompute:
     # Only used for G values where the Bessel oscillations are resolvable.
     lag_J0w: RealArray | None      # (nG_lag, nlag) = J_0(arg) * wg
     lag_L_nm: RealArray | None     # (nmax, nlag) = L_p^0(xg) for p=0..nmax-1
-    lag_mask: RealArray | None     # (nG,) bool — True where Gauss-Laguerre is used
+    lag_mask: BoolArray | None     # (nG,) bool — True where Gauss-Laguerre is used
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +190,7 @@ def _build_legendre_precompute(
     # the Gauss-Laguerre nodes. For large |G|, fall back to mapped GL.
     lag_J0w: RealArray | None = None
     lag_L_nm: RealArray | None = None
-    lag_mask: RealArray | None = None
+    lag_mask: BoolArray | None = None
     if is_coulomb:
         nlag_eff = min(max(int(nlag), 2 * nmax), 350)
         xg, wg = sps.roots_genlaguerre(nlag_eff, -0.5)

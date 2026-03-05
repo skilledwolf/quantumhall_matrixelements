@@ -26,14 +26,14 @@ from ._materialize import (
 from ._select import DEFAULT_CANONICAL_SELECT_MAX_ENTRIES
 from .diagnostic import get_exchange_kernels_opposite_field, get_form_factors_opposite_field
 from .exchange_hankel import get_exchange_kernels_hankel
-from .exchange_ogata import get_exchange_kernels_Ogata
-from .fock import build_fockmatrix_apply, get_fockmatrix_constructor, get_fockmatrix_constructor_hf
 from .exchange_laguerre import (
     ExchangeFockPrecompute,
     QuadratureParams,
     build_exchange_fock_precompute,
     get_exchange_kernels_laguerre,
 )
+from .exchange_ogata import get_exchange_kernels_Ogata
+from .fock import build_fockmatrix_apply, get_fockmatrix_constructor, get_fockmatrix_constructor_hf
 from .planewave import get_form_factors
 
 ComplexArray = NDArray[np.complex128]

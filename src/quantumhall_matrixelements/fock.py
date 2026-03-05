@@ -8,8 +8,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from .exchange_hankel import get_exchange_kernels_hankel
-from .exchange_ogata import get_exchange_kernels_Ogata
 from .exchange_laguerre import get_exchange_kernels_laguerre
+from .exchange_ogata import get_exchange_kernels_Ogata
 
 ComplexArray = NDArray[np.complex128]
 RealArray = NDArray[np.float64]

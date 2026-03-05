@@ -1,8 +1,8 @@
 """Internal regression tests for the Gauss-Legendre backend module."""
 import numpy as np
 
-from quantumhall_matrixelements.exchange_legendre import get_exchange_kernels_GaussLegendre
 from quantumhall_matrixelements._materialize import materialize_full_tensor
+from quantumhall_matrixelements.exchange_legendre import get_exchange_kernels_GaussLegendre
 
 
 def test_legendre_basic_shape():

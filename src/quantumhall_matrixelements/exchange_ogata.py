@@ -717,8 +717,8 @@ def get_exchange_kernels_Ogata(
                     # Group by ds to reuse WB_ds[ds]
                     for ds_val in np.unique(ds_b):
                         ds_val = int(ds_val)
-                        WB = WB_ds[ds_val]
-                        if WB is None:
+                        WB_opt = WB_ds[ds_val]
+                        if WB_opt is None:
                             # This ds wasn't precomputed for this absN (shouldn't happen; be safe).
                             power = (ds_val - 1) if is_coulomb else ds_val
                             base_real = np.exp(common_og + float(power) * logu_minus_og)
@@ -728,6 +728,8 @@ def get_exchange_kernels_Ogata(
                                 else (base_real * Veff_og) * W_og
                             )
                             WB_ds[ds_val] = WB
+                        else:
+                            WB = WB_opt
 
                         mask = (ds_b == ds_val)
                         if not np.any(mask):
@@ -787,7 +789,7 @@ def get_exchange_kernels_Ogata(
     if sign_magneticfield == 1:
         phase1 = 1 - 2 * ((sel_n1 - sel_m1) & 1)
         phase2 = 1 - 2 * ((sel_n2 - sel_m2) & 1)
-        Xs = cast(ComplexArray, Xs.conj() * (phase1 * phase2)[None, :])
+        Xs = Xs.conj() * (phase1 * phase2)[None, :]
 
     return Xs, select_list
 
