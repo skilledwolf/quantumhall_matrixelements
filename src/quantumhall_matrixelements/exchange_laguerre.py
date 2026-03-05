@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import cache as _cache
-from typing import cast
+from typing import TypeVar, cast
 
 import numpy as np
 from numba import njit, prange
@@ -32,6 +32,18 @@ from ._select import DEFAULT_CANONICAL_SELECT_MAX_ENTRIES, normalize_select
 ComplexArray = NDArray[np.complex128]
 RealArray = NDArray[np.float64]
 IntArray = NDArray[np.int64]
+
+_NumbaFunc = TypeVar("_NumbaFunc", bound=Callable[..., object])
+
+
+def _typed_njit(
+    *, parallel: bool = False, fastmath: bool = False
+) -> Callable[[_NumbaFunc], _NumbaFunc]:
+    """Type-preserving wrapper around ``numba.njit`` for strict mypy."""
+    return cast(
+        "Callable[[_NumbaFunc], _NumbaFunc]",
+        njit(parallel=parallel, fastmath=fastmath),
+    )
 
 
 def cartesian_to_polar(Gxy: RealArray) -> tuple[RealArray, RealArray]:
@@ -63,7 +75,7 @@ def _legendre_q_nodes_weights(N: int, qmax: float) -> tuple[RealArray, RealArray
 # ---------------------------------------------------------------------------
 def _ogata_psi(t: RealArray) -> RealArray:
     """Ogata's double-exponential map psi(t) = t * tanh((pi/2) sinh t)."""
-    return cast(RealArray, t * np.tanh(0.5 * np.pi * np.sinh(t)))
+    return np.asarray(t * np.tanh(0.5 * np.pi * np.sinh(t)), dtype=np.float64)
 
 
 def _ogata_dpsi(t: RealArray) -> RealArray:
@@ -104,7 +116,7 @@ def _ogata_q_nodes(nu: int, h: float, N: int) -> tuple[RealArray, RealArray]:
     return x.astype(np.float64), series_fac.astype(np.float64)
 
 
-@njit(fastmath=False)  # type: ignore[misc]
+@_typed_njit(fastmath=False)
 def _precompute_R_table(q_nodes: RealArray, logfact: RealArray) -> RealArray:
     """Compute R[iq, n, m] such that F_{n,m}(q,phi)=phase*R[iq,n,m]."""
     Nq = q_nodes.size
@@ -193,7 +205,7 @@ def _build_phase_tables(
     return phase_in, phase_out
 
 
-@njit(parallel=True, fastmath=False)  # type: ignore[misc]
+@_typed_njit(parallel=True, fastmath=False)
 def _exchange_fock_numba(
     rho: ComplexArray,
     R: RealArray,
@@ -243,7 +255,7 @@ def _exchange_fock_numba(
     return F
 
 
-@njit(parallel=True, fastmath=False)  # type: ignore[misc]
+@_typed_njit(parallel=True, fastmath=False)
 def _evaluate_exchange_kernels_laguerre_numba(
     R: RealArray,
     w_eff: RealArray,
@@ -295,7 +307,7 @@ def _evaluate_exchange_kernels_laguerre_numba(
     return out
 
 
-@njit(fastmath=False, parallel=True)  # type: ignore[misc]
+@_typed_njit(fastmath=False, parallel=True)
 def _ogata_q_evaluate_numba(
     x_nodes: RealArray,
     w_eff: RealArray,
@@ -440,9 +452,7 @@ class ExchangeFockPrecompute:
             )
 
         rho_c = np.ascontiguousarray(rho)
-        F = cast(
-            ComplexArray,
-            _exchange_fock_numba(
+        F = _exchange_fock_numba(
             rho_c,
             self.R,
             self.w_eff,
@@ -451,7 +461,6 @@ class ExchangeFockPrecompute:
             self.phase_out,
             self.max_d,
             self.max_order,
-            ),
         )
 
         return -F if self.include_minus else F
@@ -653,9 +662,7 @@ def get_exchange_kernels_laguerre(
 
         kernels = _precompute_bessel_table(G_gl, q_nodes, max_order)
 
-        vals_gl = cast(
-            ComplexArray,
-            _evaluate_exchange_kernels_laguerre_numba(
+        vals_gl = _evaluate_exchange_kernels_laguerre_numba(
                 R,
                 w_eff,
                 kernels,
@@ -667,8 +674,7 @@ def get_exchange_kernels_laguerre(
                 sel_m2.astype(np.int64, copy=False),
                 max_d,
                 max_order,
-            ),
-        )
+            )
         values[gl_idx, :] = vals_gl
 
     # --- Ogata q-space path (for |G| >= kmin_ogata) ---
@@ -718,9 +724,7 @@ def get_exchange_kernels_laguerre(
                     float(kappa) * sf * x_nodes[None, :] / (k_col**2 * 2.0 * np.pi)
                 ).astype(np.float64)
 
-            vals_og = cast(
-                ComplexArray,
-                _ogata_q_evaluate_numba(
+            vals_og = _ogata_q_evaluate_numba(
                     x_nodes,
                     w_eff_og,
                     k_og,
@@ -732,8 +736,7 @@ def get_exchange_kernels_laguerre(
                     pi_og,
                     po_og,
                     max_d,
-                ),
-            )
+                )
             values[np.ix_(og_idx, entry_idx)] = vals_og
 
     # Note: sign_magneticfield is already incorporated in the phase tables

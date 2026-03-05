@@ -55,7 +55,7 @@ def _legendre_nodes_weights_mapped(nquad: int, scale: float) -> tuple[RealArray,
 # -----------------------------------------------------------------------------
 def _ogata_psi(t: RealArray) -> RealArray:
     """Ogata's double-exponential map ψ(t) = t * tanh((π/2) sinh t)."""
-    return cast(RealArray, t * np.tanh(0.5 * np.pi * np.sinh(t)))
+    return np.asarray(t * np.tanh(0.5 * np.pi * np.sinh(t)), dtype=np.float64)
 
 
 def _ogata_dpsi(t: RealArray) -> RealArray:
