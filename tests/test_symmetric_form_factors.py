@@ -52,6 +52,20 @@ def test_guiding_center_form_factors_known_low_index_values():
     assert np.allclose(g_gc[:, 1, 0], 1j * mag_term * gauss_term * np.exp(+1j * thetas))
 
 
+def test_guiding_center_sign_magneticfield_phase_relation():
+    mmax = 4
+    qs = np.array([0.4, 1.1])
+    thetas = np.array([0.2, -0.6])
+
+    g_neg = get_guiding_center_form_factors(qs, thetas, mmax, sign_magneticfield=-1)
+    g_pos = get_guiding_center_form_factors(qs, thetas, mmax, sign_magneticfield=+1)
+
+    idx = np.arange(mmax)
+    phase = np.where((idx[:, None] - idx[None, :]) % 2 == 0, 1.0, -1.0)
+    expected = np.conj(g_neg) * phase[None, :, :]
+    assert np.allclose(g_pos, expected)
+
+
 def test_factorized_density_form_factors_delegate_to_component_apis():
     qs = np.array([0.3, 0.7])
     thetas = np.array([0.2, -0.1])
@@ -62,3 +76,33 @@ def test_factorized_density_form_factors_delegate_to_component_apis():
 
     assert np.allclose(f_cyc, get_form_factors(qs, thetas, nmax))
     assert np.allclose(g_gc, get_guiding_center_form_factors(qs, thetas, mmax))
+
+
+def test_factorized_density_sign_consistency_matches_components():
+    qs = np.array([0.5])
+    thetas = np.array([0.4])
+    nmax = 3
+    mmax = 3
+
+    f_neg, g_neg = get_factorized_density_form_factors(
+        qs,
+        thetas,
+        nmax,
+        mmax,
+        sign_magneticfield=-1,
+    )
+    f_pos, g_pos = get_factorized_density_form_factors(
+        qs,
+        thetas,
+        nmax,
+        mmax,
+        sign_magneticfield=+1,
+    )
+
+    idx_n = np.arange(nmax)
+    phase_n = np.where((idx_n[:, None] - idx_n[None, :]) % 2 == 0, 1.0, -1.0)
+    idx_m = np.arange(mmax)
+    phase_m = np.where((idx_m[:, None] - idx_m[None, :]) % 2 == 0, 1.0, -1.0)
+
+    assert np.allclose(f_pos, np.conj(f_neg) * phase_n[None, :, :])
+    assert np.allclose(g_pos, np.conj(g_neg) * phase_m[None, :, :])
