@@ -76,7 +76,7 @@ python_version = "3.11"
 strict = true
 ignore_missing_imports = true
 files = ["src/quantumhall_matrixelements"]
-exclude = "^(playground/|tests/|validation/|examples/)"
+exclude = "^(playground/|tests/|validation/|examples/|build/|dist/|src/quantumhall_matrixelements\\.egg-info/)"
 
 [tool.coverage.run]
 branch = true
