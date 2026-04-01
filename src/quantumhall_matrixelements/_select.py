@@ -21,6 +21,12 @@ Quad = tuple[int, int, int, int]
 DEFAULT_CANONICAL_SELECT_MAX_ENTRIES = 2_000_000
 
 
+def estimate_canonical_select_size(nmax: int) -> int:
+    """Return the size of the canonical symmetry-reduced select list."""
+    n_pairs = int(nmax) * int(nmax)
+    return (n_pairs * (n_pairs + 1)) // 2
+
+
 def _coerce_quad(nmax: int, quad: Sequence[int]) -> Quad:
     if len(quad) != 4:
         raise ValueError("select entries must be (n1, m1, n2, m2) tuples.")
@@ -45,8 +51,7 @@ def normalize_select(
         if canonical_select_max_entries is not None:
             # number of (n,m) pairs is nmax^2; canonical selection is the upper
             # triangle in that pair space.
-            n_pairs = int(nmax) * int(nmax)
-            n_select = (n_pairs * (n_pairs + 1)) // 2
+            n_select = estimate_canonical_select_size(nmax)
             if n_select > int(canonical_select_max_entries):
                 raise MemoryError(
                     f"Refusing to build canonical select list for nmax={nmax}: "
@@ -71,5 +76,6 @@ def normalize_select(
 
 __all__ = [
     "DEFAULT_CANONICAL_SELECT_MAX_ENTRIES",
+    "estimate_canonical_select_size",
     "normalize_select",
 ]

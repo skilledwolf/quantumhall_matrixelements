@@ -7,6 +7,8 @@ from typing import Any, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from ._materialize import DEFAULT_COMPRESSED_LIMIT_BYTES, guard_compressed_values_allocation
+from ._select import estimate_canonical_select_size
 from .exchange_hankel import get_exchange_kernels_hankel
 from .exchange_laguerre import (
     QuadratureParams,
@@ -21,6 +23,7 @@ Quad = tuple[int, int, int, int]
 _FAST_LAGUERRE_PASSTHROUGH_KEYS = {
     "adaptive_nquad",
     "canonical_select_max_entries",
+    "compressed_limit_bytes",
     "kappa",
     "nquad",
     "potential",
@@ -91,6 +94,37 @@ def _build_compressed_constructor(
         return -out if include_minus else out
 
     return apply
+
+
+def _guard_compressed_kernel_values(
+    G_magnitudes: RealArray,
+    G_angles: RealArray,
+    nmax: int,
+    *,
+    select: Iterable[Quad] | None,
+    compressed_limit_bytes: float | int | None,
+    backend_name: str,
+) -> tuple[RealArray, RealArray, list[Quad] | None]:
+    G_magnitudes_arr = cast(RealArray, np.asarray(G_magnitudes, dtype=np.float64).ravel())
+    G_angles_arr = cast(RealArray, np.asarray(G_angles, dtype=np.float64).ravel())
+    if G_magnitudes_arr.shape != G_angles_arr.shape:
+        raise ValueError("G_magnitudes and G_angles must have the same shape.")
+
+    select_list: list[Quad] | None
+    if select is None:
+        select_list = None
+        n_select = estimate_canonical_select_size(int(nmax))
+    else:
+        select_list = [cast(Quad, tuple(int(x) for x in quad)) for quad in select]
+        n_select = len(select_list)
+
+    guard_compressed_values_allocation(
+        nG=int(G_magnitudes_arr.size),
+        n_select=int(n_select),
+        compressed_limit_bytes=compressed_limit_bytes,
+        backend_name=backend_name,
+    )
+    return G_magnitudes_arr, G_angles_arr, select_list
 
 
 def _build_compressed_constructor_hf(
@@ -295,6 +329,10 @@ def get_fockmatrix_constructor(
     """
 
     chosen = (method or "laguerre").strip().lower()
+    backend_kwargs = dict(kwargs)
+    compressed_limit_bytes = backend_kwargs.pop(
+        "compressed_limit_bytes", DEFAULT_COMPRESSED_LIMIT_BYTES
+    )
     backend: Any
     if chosen in {"hankel", "hk"}:
         backend = get_exchange_kernels_hankel
@@ -317,14 +355,23 @@ def get_fockmatrix_constructor(
             "Use 'laguerre', 'ogata', or 'hankel'."
         )
 
+    G_magnitudes_arr, G_angles_arr, select_list = _guard_compressed_kernel_values(
+        G_magnitudes,
+        G_angles,
+        nmax,
+        select=select,
+        compressed_limit_bytes=compressed_limit_bytes,
+        backend_name=f"{chosen} exchange kernels",
+    )
+
     values, select_list = cast(
         tuple[ComplexArray, list[Quad]],
         backend(
-            G_magnitudes,
-            G_angles,
+            G_magnitudes_arr,
+            G_angles_arr,
             nmax,
-            select=select,
-            **kwargs,
+            select=select_list,
+            **backend_kwargs,
         ),
     )
 
@@ -349,6 +396,10 @@ def get_fockmatrix_constructor_hf(
         Σ^F_{n m}(G) = - Σ_{r,t} X_{m r n t}(G) ρ^*_{t r}(G).
     """
     chosen = (method or "laguerre").strip().lower()
+    backend_kwargs = dict(kwargs)
+    compressed_limit_bytes = backend_kwargs.pop(
+        "compressed_limit_bytes", DEFAULT_COMPRESSED_LIMIT_BYTES
+    )
     backend: Any
     if chosen in {"hankel", "hk"}:
         backend = get_exchange_kernels_hankel
@@ -362,14 +413,23 @@ def get_fockmatrix_constructor_hf(
             "Use 'laguerre', 'ogata', or 'hankel'."
         )
 
+    G_magnitudes_arr, G_angles_arr, select_list = _guard_compressed_kernel_values(
+        G_magnitudes,
+        G_angles,
+        nmax,
+        select=select,
+        compressed_limit_bytes=compressed_limit_bytes,
+        backend_name=f"{chosen} exchange kernels",
+    )
+
     values, select_list = cast(
         tuple[ComplexArray, list[Quad]],
         backend(
-            G_magnitudes,
-            G_angles,
+            G_magnitudes_arr,
+            G_angles_arr,
             nmax,
-            select=select,
-            **kwargs,
+            select=select_list,
+            **backend_kwargs,
         ),
     )
     return _build_compressed_constructor_hf(values, select_list, nmax)

@@ -98,6 +98,11 @@ Calling ``get_exchange_kernels_compressed(select=None)`` still builds the
 canonical symmetry-reduced list, so it avoids 5D materialization but not the
 underlying O(``nmax^4``) output scaling.
 
+The public compressed API also guards the numeric ``(nG, n_select)`` values
+array via ``compressed_limit_bytes`` (default 512 MiB). If you omit ``select``,
+``canonical_select_max_entries`` separately guards the number of canonical
+representatives before any numeric backend work begins.
+
 For the ``'laguerre'`` backend, dense Gauss-Legendre work tables are guarded by
 ``workspace_limit_bytes`` (default 512 MiB). Pass ``workspace_limit_bytes=None``
 to disable that backend-level guard.

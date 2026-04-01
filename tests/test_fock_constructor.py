@@ -99,3 +99,21 @@ def test_fock_constructor_laguerre_workspace_guard_uses_fast_path():
             nquad=80,
             workspace_limit_bytes=1,
         )
+
+
+def test_fock_constructor_laguerre_accepts_compressed_limit_on_fast_path():
+    Gs = np.array([0.0, 1.2])
+    thetas = np.array([0.0, 0.3])
+    rho = _random_hermitian_rho(len(Gs), 3, seed=7)
+
+    ref = get_fockmatrix_constructor(Gs, thetas, 3, method="laguerre", nquad=200)(rho)
+    out = get_fockmatrix_constructor(
+        Gs,
+        thetas,
+        3,
+        method="laguerre",
+        nquad=200,
+        compressed_limit_bytes=1,
+    )(rho)
+
+    assert np.allclose(out, ref, rtol=1e-10, atol=1e-12)

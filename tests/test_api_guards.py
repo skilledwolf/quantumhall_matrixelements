@@ -66,6 +66,38 @@ def test_canonical_select_guard_is_bypassed_for_explicit_select():
     assert select_list == [(0, 0, 0, 0)]
 
 
+def test_compressed_values_guard_raises_before_backend_work():
+    Gs = np.array([0.0, 1.0], dtype=float)
+    thetas = np.array([0.0, 0.1], dtype=float)
+
+    with pytest.raises(MemoryError):
+        get_exchange_kernels_compressed(
+            Gs,
+            thetas,
+            2,
+            method="ogata",
+            select=[(0, 0, 0, 0)],
+            compressed_limit_bytes=1,
+        )
+
+
+def test_compressed_values_limit_none_bypasses_guard():
+    Gs = np.array([0.0, 1.0], dtype=float)
+    thetas = np.array([0.0, 0.1], dtype=float)
+    select = [(0, 0, 0, 0)]
+
+    values, select_list = get_exchange_kernels_compressed(
+        Gs,
+        thetas,
+        2,
+        method="ogata",
+        select=select,
+        compressed_limit_bytes=None,
+    )
+    assert values.shape == (2, 1)
+    assert select_list == select
+
+
 def test_laguerre_workspace_guard_raises_for_compressed_call():
     Gs = np.array([12.0], dtype=float)
     thetas = np.array([0.0], dtype=float)

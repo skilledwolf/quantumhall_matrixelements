@@ -19,11 +19,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ._materialize import (
+    DEFAULT_COMPRESSED_LIMIT_BYTES,
     DEFAULT_FULL_TENSOR_LIMIT_BYTES,
+    guard_compressed_values_allocation,
     guard_full_tensor_materialization,
     materialize_full_tensor,
 )
-from ._select import DEFAULT_CANONICAL_SELECT_MAX_ENTRIES
+from ._select import DEFAULT_CANONICAL_SELECT_MAX_ENTRIES, estimate_canonical_select_size
 from .diagnostic import get_exchange_kernels_opposite_field, get_form_factors_opposite_field
 from .exchange_hankel import get_exchange_kernels_hankel
 from .exchange_laguerre import (
@@ -144,6 +146,7 @@ def get_exchange_kernels_compressed(
     method: str | None = None,
     select: Iterable[Quad] | None = None,
     canonical_select_max_entries: int | None = DEFAULT_CANONICAL_SELECT_MAX_ENTRIES,
+    compressed_limit_bytes: float | int | None = DEFAULT_COMPRESSED_LIMIT_BYTES,
     **kwargs: Any,
 ) -> tuple[ComplexArray, list[Quad]]:
     """Return the compressed exchange-kernel representation ``(values, select_list)``.
@@ -153,8 +156,9 @@ def get_exchange_kernels_compressed(
 
     If ``select`` is omitted, the backend still constructs the canonical
     symmetry-reduced list, so the returned representation remains O(``nmax^4``)
-    in the number of stored entries. Pass an explicit ``select=...`` to compute
-    only the entries you need.
+    in the number of stored entries. ``compressed_limit_bytes`` caps the
+    resulting ``(nG, n_select)`` complex output array. Pass an explicit
+    ``select=...`` to compute only the entries you need.
     """
     chosen = (method or "laguerre").strip().lower()
     backend_fn: Any
@@ -175,13 +179,28 @@ def get_exchange_kernels_compressed(
     if G_magnitudes.shape != G_angles.shape:
         raise ValueError("G_magnitudes and G_angles must have the same shape.")
 
+    select_list: list[Quad] | None
+    if select is None:
+        select_list = None
+        n_select_est = estimate_canonical_select_size(int(nmax))
+    else:
+        select_list = [cast(Quad, tuple(int(x) for x in quad)) for quad in select]
+        n_select_est = len(select_list)
+
+    guard_compressed_values_allocation(
+        nG=int(G_magnitudes.size),
+        n_select=int(n_select_est),
+        compressed_limit_bytes=compressed_limit_bytes,
+        backend_name=f"{chosen} exchange kernels",
+    )
+
     return cast(
         tuple[ComplexArray, list[Quad]],
         backend_fn(
             G_magnitudes,
             G_angles,
             nmax,
-            select=select,
+            select=select_list,
             canonical_select_max_entries=canonical_select_max_entries,
             **kwargs,
         ),

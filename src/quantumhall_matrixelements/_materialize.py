@@ -7,6 +7,8 @@ import numpy as np
 
 # Default soft cap for allocating a full (nG, nmax, nmax, nmax, nmax) complex tensor.
 DEFAULT_FULL_TENSOR_LIMIT_BYTES = 512 * 1024 * 1024  # 512 MiB
+# Default soft cap for allocating compressed (nG, n_select) complex arrays.
+DEFAULT_COMPRESSED_LIMIT_BYTES = DEFAULT_FULL_TENSOR_LIMIT_BYTES
 # Default soft cap for dense backend work tables such as quadrature precomputes.
 DEFAULT_WORKSPACE_LIMIT_BYTES = DEFAULT_FULL_TENSOR_LIMIT_BYTES
 
@@ -90,6 +92,30 @@ def guard_full_tensor_materialization(
         )
 
 
+def guard_compressed_values_allocation(
+    *,
+    nG: int,
+    n_select: int,
+    compressed_limit_bytes: float | int | None = DEFAULT_COMPRESSED_LIMIT_BYTES,
+    backend_name: str = "exchange kernels",
+    dtype: Any = np.complex128,
+) -> None:
+    """Raise proactively if a compressed ``(nG, n_select)`` array would be too large."""
+    if compressed_limit_bytes is None:
+        return
+
+    est = float(nG) * float(n_select) * np.dtype(dtype).itemsize
+    if est > float(compressed_limit_bytes):
+        human_est = format_bytes(est)
+        human_lim = format_bytes(float(compressed_limit_bytes))
+        raise MemoryError(
+            f"Refusing to allocate compressed ({nG}, {n_select}) values array "
+            f"(~{human_est} > {human_lim}) for {backend_name}; pass a smaller "
+            "explicit select=..., split the G grid, increase compressed_limit_bytes, "
+            "or pass compressed_limit_bytes=None to disable this guard."
+        )
+
+
 # --------------------------------------------------------------------------- #
 # Helpers for controlled materialization / reconstruction                     #
 # --------------------------------------------------------------------------- #
@@ -142,6 +168,8 @@ def materialize_full_tensor(
 
 __all__ = [
     "guard_full_tensor_materialization",
+    "guard_compressed_values_allocation",
+    "DEFAULT_COMPRESSED_LIMIT_BYTES",
     "DEFAULT_FULL_TENSOR_LIMIT_BYTES",
     "DEFAULT_WORKSPACE_LIMIT_BYTES",
     "build_canonical_select",
