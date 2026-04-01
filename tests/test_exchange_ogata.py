@@ -1,6 +1,6 @@
 import numpy as np
 
-from quantumhall_matrixelements import get_exchange_kernels
+from quantumhall_matrixelements import get_exchange_kernels, get_exchange_kernels_compressed
 
 
 def test_ogata_analytic_coulomb_limit_zero_G():
@@ -69,3 +69,20 @@ def test_ogata_sign_magneticfield_phase_relation():
 
     expected = np.conj(X_neg) * phase[None, ...]
     assert np.allclose(X_pos, expected)
+
+
+def test_ogata_auto_preserves_explicit_select_in_all_fallback_regime():
+    """ogata_auto should not expand an explicit select list when all G use fallback."""
+    select = [(0, 0, 0, 0)]
+    values, select_list = get_exchange_kernels_compressed(
+        np.array([0.5]),
+        np.array([0.0]),
+        3,
+        method="ogata",
+        select=select,
+        ogata_auto=True,
+        kmin_ogata=5.0,
+    )
+
+    assert values.shape == (1, 1)
+    assert select_list == select

@@ -237,6 +237,8 @@ def get_exchange_kernels_Ogata(
                 ogata_N=ogata_N,
                 kmin_ogata=kmin_ogata,
                 chunk_size=chunk_size,
+                select=select,
+                canonical_select_max_entries=canonical_select_max_entries,
                 ogata_auto=False,
             )
 
