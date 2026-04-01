@@ -17,7 +17,6 @@ from typing import cast
 import numpy as np
 import scipy.special as sps
 from numpy.typing import NDArray
-from scipy.special import roots_legendre
 
 from ._select import DEFAULT_CANONICAL_SELECT_MAX_ENTRIES, normalize_select
 
@@ -33,21 +32,6 @@ Int8Array = NDArray[np.int8]
 def _parity_factor(N: int) -> int:
     """(-1)^((N-|N|)/2) → (-1)^N for N<0, and 1 for N>=0."""
     return int((-1) ** ((N - abs(N)) // 2))
-
-
-@cache
-def _legendre_nodes_weights_mapped(nquad: int, scale: float) -> tuple[RealArray, RealArray]:
-    """
-    Gauss-Legendre nodes/weights mapped from [-1, 1] to [0, inf).
-
-    Mapping: z = scale * (1+x)/(1-x)
-    Jacobian: dz/dx = scale * 2/(1-x)^2
-    """
-    x, w_leg = roots_legendre(int(nquad))
-    denom = 1.0 - x
-    z = float(scale) * (1.0 + x) / denom
-    w = w_leg * (float(scale) * 2.0 / (denom * denom))
-    return np.asarray(z, dtype=np.float64), np.asarray(w, dtype=np.float64)
 
 
 # -----------------------------------------------------------------------------
@@ -244,23 +228,24 @@ def get_exchange_kernels_Ogata(
 
         h_curr = float(ogata_h)
         N_curr = ogata_N
-        vals_prev, sel_prev = get_exchange_kernels_Ogata(
-            G_magnitudes,
-            G_angles,
-            nmax,
-            potential=potential,
-            kappa=kappa,
-            nquad=nquad,
-            scale=scale,
-            nlag=nlag,
-            sign_magneticfield=sign_magneticfield,
-            ogata_h=h_curr,
-            ogata_N=N_curr,
-            kmin_ogata=kmin_ogata,
-            chunk_size=chunk_size,
-            select=select,
-            ogata_auto=False,
-        )
+        with np.errstate(over="ignore", invalid="ignore"):
+            vals_prev, sel_prev = get_exchange_kernels_Ogata(
+                G_magnitudes,
+                G_angles,
+                nmax,
+                potential=potential,
+                kappa=kappa,
+                nquad=nquad,
+                scale=scale,
+                nlag=nlag,
+                sign_magneticfield=sign_magneticfield,
+                ogata_h=h_curr,
+                ogata_N=N_curr,
+                kmin_ogata=kmin_ogata,
+                chunk_size=chunk_size,
+                select=select,
+                ogata_auto=False,
+            )
         result_select = sel_prev
 
         ok_mask = np.zeros_like(og_mask, dtype=bool)
@@ -272,23 +257,24 @@ def get_exchange_kernels_Ogata(
             else:
                 N_next = int(np.ceil(int(N_curr) * float(ogata_auto_refine)))
 
-            vals_curr, sel_curr = get_exchange_kernels_Ogata(
-                G_magnitudes,
-                G_angles,
-                nmax,
-                potential=potential,
-                kappa=kappa,
-                nquad=nquad,
-                scale=scale,
-                nlag=nlag,
-                sign_magneticfield=sign_magneticfield,
-                ogata_h=h_curr,
-                ogata_N=N_next,
-                kmin_ogata=kmin_ogata,
-                chunk_size=chunk_size,
-                select=select,
-                ogata_auto=False,
-            )
+            with np.errstate(over="ignore", invalid="ignore"):
+                vals_curr, sel_curr = get_exchange_kernels_Ogata(
+                    G_magnitudes,
+                    G_angles,
+                    nmax,
+                    potential=potential,
+                    kappa=kappa,
+                    nquad=nquad,
+                    scale=scale,
+                    nlag=nlag,
+                    sign_magneticfield=sign_magneticfield,
+                    ogata_h=h_curr,
+                    ogata_N=N_next,
+                    kmin_ogata=kmin_ogata,
+                    chunk_size=chunk_size,
+                    select=select,
+                    ogata_auto=False,
+                )
             if sel_curr != result_select:
                 raise RuntimeError("select list changed between Ogata auto refinements")
 
@@ -436,91 +422,25 @@ def get_exchange_kernels_Ogata(
     fb_idx = np.nonzero(fb_mask)[0]
 
     k_og = k_all[og_idx]
-    k_fb = k_all[fb_idx]
+    fb_values: ComplexArray | None = None
+    if fb_idx.size > 0:
+        from .exchange_legendre import get_exchange_kernels_GaussLegendre
 
-    # -----------------------------
-    # 7. Fallback quadrature precompute (only if needed)
-    # -----------------------------
-    fb_has = fb_idx.size > 0
-    if fb_has:
-        z_fb, w_fb = _legendre_nodes_weights_mapped(int(nquad), float(scale))
-        exp_minus_z_fb = np.exp(-z_fb)
-        sqrt2z_fb = np.sqrt(2.0 * z_fb)
-        arg_fb = k_fb[:, None] * sqrt2z_fb[None, :]  # (nG_fb, nquad)
-
-        # Callable/constant potential: evaluated once on the fallback grid
-        Veff_fb = np.ones_like(z_fb)
-        if not is_coulomb:
-            if is_constant:
-                Veff_fb = (float(kappa) / (2.0 * np.pi)) * np.ones_like(z_fb)
-            else:
-                qvals = sqrt2z_fb  # (nquad,)
-                assert pot_fn is not None
-                Vraw_fb = np.asarray(pot_fn(qvals))
-                if np.iscomplexobj(Vraw_fb):
-                    raise ValueError("Callable potential must be real-valued.")
-                Vraw_fb = Vraw_fb.astype(np.float64, copy=False)
-                if Vraw_fb.shape != z_fb.shape:
-                    raise ValueError(
-                        "Callable potential must return array of shape (nquad,) on fallback grid."
-                    )
-                Veff_fb = Vraw_fb / (2.0 * np.pi)
-
-        # Precompute z^alpha for all ds for fallback
-        z_pows_fb = np.empty((max_d_sum + 1, z_fb.size), dtype=np.float64)
-        if is_coulomb:
-            # alpha = (ds - 1)/2
-            for ds_idx in range(max_d_sum + 1):
-                alpha = 0.5 * (ds_idx - 1)
-                z_pows_fb[ds_idx] = z_fb**alpha
-        else:
-            for ds_idx in range(max_d_sum + 1):
-                alpha = 0.5 * ds_idx
-                z_pows_fb[ds_idx] = z_fb**alpha
-
-        # Precompute Laguerre table on fallback grid for all keys
-        # Shape: (nquad, nkeys_total)
-        L_fb = np.empty((z_fb.size, nkeys_total), dtype=np.float64)
-        for key in range(nkeys_total):
-            p = int(key_p[key])
-            d = int(key_d[key])
-            L_fb[:, key] = sps.eval_genlaguerre(p, d, z_fb)
-
-        # Gauss-Laguerre for ds=0 Coulomb fallback: absorbs z^{-1/2} e^{-z}.
-        # Only used for |G| small enough that Bessel oscillations are resolvable.
-        lag_J0w_fb = np.empty((0, 0), dtype=np.float64)
-        lag_L_fb = np.empty((0, 0), dtype=np.float64)
-        lag_fb_mask = np.zeros(k_fb.size, dtype=bool)  # within fallback G subset
-        if is_coulomb:
-            nlag_eff = min(max(int(nlag), 2 * nmax), 350)
-            xg_fb, wg_fb = sps.roots_genlaguerre(nlag_eff, -0.5)
-            g_threshold = float(np.sqrt(nlag_eff))
-            lag_fb_mask = k_fb <= g_threshold
-            k_fb_lag = k_fb[lag_fb_mask]
-            if k_fb_lag.size > 0:
-                arg_lag_fb = k_fb_lag[:, None] * np.sqrt(2.0 * xg_fb)[None, :]
-                lag_J0w_fb = (sps.jv(0, arg_lag_fb) * wg_fb[None, :]).astype(np.float64)
-            else:
-                lag_J0w_fb = np.empty((0, nlag_eff), dtype=np.float64)
-            # L_p^0(xg) for p=0..nmax-1 on Gauss-Laguerre nodes
-            lag_L_fb = np.empty((xg_fb.size, nmax), dtype=np.float64)
-            for p in range(nmax):
-                lag_L_fb[:, p] = sps.eval_genlaguerre(p, 0, xg_fb)
-    else:
-        z_fb = np.empty((0,), dtype=np.float64)
-        w_fb = np.empty((0,), dtype=np.float64)
-        exp_minus_z_fb = np.empty((0,), dtype=np.float64)
-        sqrt2z_fb = np.empty((0,), dtype=np.float64)
-        arg_fb = np.empty((0, 0), dtype=np.float64)
-        Veff_fb = np.empty((0,), dtype=np.float64)
-        z_pows_fb = np.empty((max_d_sum + 1, 0), dtype=np.float64)
-        L_fb = np.empty((0, nkeys_total), dtype=np.float64)
-        lag_J0w_fb = np.empty((0, 0), dtype=np.float64)
-        lag_L_fb = np.empty((0, 0), dtype=np.float64)
-        lag_fb_mask = np.zeros(0, dtype=bool)
-
-    # Cache of J_abs*w for each absN on fallback grid
-    Jw_fb_cache: dict[int, RealArray] = {}
+        fb_values, fb_select = get_exchange_kernels_GaussLegendre(
+            np.asarray(G_magnitudes)[fb_idx],
+            np.asarray(G_angles)[fb_idx],
+            nmax,
+            potential=potential,
+            kappa=kappa,
+            nquad=nquad,
+            scale=scale,
+            nlag=nlag,
+            sign_magneticfield=-1,
+            select=select,
+            canonical_select_max_entries=canonical_select_max_entries,
+        )
+        if fb_select != select_list:
+            raise RuntimeError("fallback backend returned different select list")
 
     # -----------------------------
     # 8. Ogata quadrature setup (global)
@@ -635,16 +555,6 @@ def get_exchange_kernels_Ogata(
                 )
                 WB_ds[ds_idx] = WB
 
-        # -------------------------
-        # Fallback Bessel cache for this absN (only if needed)
-        # -------------------------
-        Jw_fb: RealArray = np.empty((0, 0), dtype=np.float64)
-        if fb_has:
-            if absN not in Jw_fb_cache:
-                J_abs = sps.jv(absN, arg_fb)  # (nG_fb, nquad)
-                Jw_fb_cache[absN] = (J_abs * w_fb[None, :]).astype(np.float64)
-            Jw_fb = Jw_fb_cache[absN]
-
         radial_dtype = np.float64
 
         # -------------------------
@@ -746,47 +656,14 @@ def get_exchange_kernels_Ogata(
 
                     radial_block[og_idx, :] = radial_og
 
-                # -------- Fallback contribution --------
-                if fb_has:
-                    # ds=0 Coulomb entries with small |G| use Gauss-Laguerre;
-                    # everything else uses mapped Gauss-Legendre.
-                    ds0_mask_b = (ds_b == 0) if is_coulomb else None
-                    has_ds0_lag = (ds0_mask_b is not None
-                                  and np.any(ds0_mask_b)
-                                  and np.any(lag_fb_mask))
-
-                    # --- Mapped GL path for all non-ds0 entries, and ds0 at large |G| ---
-                    # Build term matrix on fallback z grid: (nquad, b)
-                    zpow_sel = z_pows_fb[ds_b]  # (b, nquad)
-                    base_mat = exp_minus_z_fb[:, None] * zpow_sel.T  # (nquad, b)
-                    if not is_coulomb:
-                        base_mat = base_mat * Veff_fb[:, None]
-
-                    L1_fb_b = L_fb[:, key1_g[sl]]  # (nquad, b)
-                    L2_fb_b = L_fb[:, key2_g[sl]]  # (nquad, b)
-                    term_mat = base_mat * L1_fb_b * L2_fb_b  # (nquad, b)
-
-                    radial_fb_all = Jw_fb @ term_mat  # (nG_fb, b)
-                    radial_block[fb_idx, :] = radial_fb_all
-
-                    # --- Overwrite ds=0 entries for small-|G| fallback with Gauss-Laguerre ---
-                    if has_ds0_lag:
-                        assert ds0_mask_b is not None
-                        idx0 = np.nonzero(ds0_mask_b)[0]  # chunk-local indices of ds=0 entries
-                        # lag_fb_mask is (nG_fb,) bool; lag_J0w_fb is (nG_fb_lag, nlag)
-                        fb_lag_idx = np.nonzero(lag_fb_mask)[0]  # indices within fb_idx
-                        n1_ds0 = n1_arr[sl][idx0]
-                        m2_ds0 = m2_arr[sl][idx0]
-                        L1_lag = lag_L_fb[:, n1_ds0]  # (nlag, b_ds0)
-                        L2_lag = lag_L_fb[:, m2_ds0]  # (nlag, b_ds0)
-                        radial_lag = lag_J0w_fb @ (L1_lag * L2_lag)  # (nG_fb_lag, b_ds0)
-                        radial_block[np.ix_(fb_idx[fb_lag_idx], idx0)] = radial_lag
-
                 # Multiply in the N-dependent plane-wave phase and scalar prefactor.
                 val_block = (phase_N[:, None] * radial_block) * scalar_b[None, :]  # (nG, b)
 
                 # Scatter into output
                 Xs[:, sel_idx_b] = val_block
+
+    if fb_values is not None:
+        Xs[fb_idx] = fb_values
 
     if sign_magneticfield == 1:
         phase1 = 1 - 2 * ((sel_n1 - sel_m1) & 1)

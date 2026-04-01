@@ -1,6 +1,9 @@
 """Internal regression tests for the Gauss-Legendre backend module."""
+import warnings
+
 import numpy as np
 
+from quantumhall_matrixelements import get_exchange_kernels_compressed
 from quantumhall_matrixelements._materialize import materialize_full_tensor
 from quantumhall_matrixelements.exchange_legendre import get_exchange_kernels_GaussLegendre
 
@@ -63,3 +66,32 @@ def test_legendre_callable_potential_matches_coulomb():
 
     assert sel_c == sel_f
     assert np.allclose(values_f, values_c, rtol=1e-4, atol=1e-4)
+
+
+def test_legendre_large_n_warning_free_matches_laguerre():
+    select = [(100, 100, 100, 100)]
+    Gs = np.array([0.0, 5.0, 10.0], dtype=float)
+    thetas = np.zeros_like(Gs)
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error")
+        values_leg, select_leg = get_exchange_kernels_GaussLegendre(
+            Gs,
+            thetas,
+            101,
+            nquad=800,
+            scale=0.04,
+            select=select,
+        )
+
+    values_lag, select_lag = get_exchange_kernels_compressed(
+        Gs,
+        thetas,
+        101,
+        method="laguerre",
+        select=select,
+    )
+
+    assert select_leg == select
+    assert select_lag == select
+    assert np.allclose(values_leg, values_lag, rtol=1e-10, atol=1e-10)

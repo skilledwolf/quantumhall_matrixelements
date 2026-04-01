@@ -10,6 +10,9 @@ import numpy as np
 import scipy.special as sps
 from scipy.special import roots_legendre
 
+from .exchange_laguerre import _logfact as _laguerre_logfact
+from .exchange_laguerre import _precompute_R_table
+
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
@@ -55,22 +58,18 @@ def _legendre_nodes_weights_mapped(nquad: int, scale: float) -> tuple[RealArray,
 @dataclass(frozen=True)
 class LegendrePrecompute:
     nmax: int
-    kappa: float
     G_mags: RealArray      # (nG,)
     G_angles: RealArray    # (nG,)
     z: RealArray           # (nquad,)
     w: RealArray           # (nquad,)
-    exp_minus_z: RealArray # (nquad,)
-    sqrt2z: RealArray      # (nquad,)
+    q_nodes: RealArray     # (nquad,)
     arg: RealArray         # (nG, nquad)
     is_coulomb: bool
-    Veff: RealArray | None # (nquad,) or None
-    z_pows: RealArray      # (max_d_sum+1, nquad)
-    C_nm: RealArray        # (nmax,nmax)
+    mapped_weight: RealArray  # (nquad,)
     extra_sign_nm: Int8Array # (nmax,nmax)
     d_nm: IntArray        # (nmax,nmax)
     D_nm: IntArray        # (nmax,nmax)
-    L_nm: RealArray        # (nmax,nmax,nquad)
+    R_nm: RealArray       # (nquad,nmax,nmax)
     parity: Int8Array      # (2*maxD+1,)
     phase_table: ComplexArray # (2*maxD+1, nG)
     phase_power: ComplexArray # (max_d_sum+1,)
@@ -83,6 +82,7 @@ class LegendrePrecompute:
 
     # Gauss-Laguerre quadrature for ds=0 Coulomb (alpha=-0.5).
     # Only used for G values where the Bessel oscillations are resolvable.
+    lag_scale: float
     lag_J0w: RealArray | None      # (nG_lag, nlag) = J_0(arg) * wg
     lag_L_nm: RealArray | None     # (nmax, nlag) = L_p^0(xg) for p=0..nmax-1
     lag_mask: BoolArray | None     # (nG,) bool — True where Gauss-Laguerre is used
@@ -107,10 +107,9 @@ def _build_legendre_precompute(
 
     # Quadrature grid and derived arrays
     z, w = _legendre_nodes_weights_mapped(int(nquad), float(scale))
-    exp_minus_z = np.exp(-z)
-    sqrt2z = np.sqrt(2.0 * z)
+    q_nodes = np.sqrt(2.0 * z)
 
-    arg = G_magnitudes[:, None] * sqrt2z[None, :]
+    arg = G_magnitudes[:, None] * q_nodes[None, :]
 
     # Potential
     if callable(potential):
@@ -125,59 +124,37 @@ def _build_legendre_precompute(
     is_coulomb = pot_kind == "coulomb"
     is_constant = pot_kind == "constant"
 
-    Veff = None
-    if not is_coulomb:
-        if is_constant:
-            Veff = (float(kappa) / (2.0 * np.pi)) * np.ones_like(z)
-        else:
-            qvals = sqrt2z  # already in 1/ell units supplied by caller
-            assert pot_fn is not None
-            Vraw = np.asarray(pot_fn(qvals))
-            if np.iscomplexobj(Vraw):
-                raise ValueError("Callable potential must be real-valued.")
-            Vraw = Vraw.astype(np.float64, copy=False)
-            if Vraw.shape != z.shape:
-                raise ValueError("Callable potential must return array of shape (nquad,)")
-            Veff = Vraw / (2.0 * np.pi)
+    if is_coulomb:
+        mapped_weight = (float(kappa) / q_nodes).astype(np.float64, copy=False)
+    elif is_constant:
+        mapped_weight = ((float(kappa) / (2.0 * np.pi)) * np.ones_like(z)).astype(
+            np.float64, copy=False
+        )
+    else:
+        qvals = q_nodes  # already in 1/ell units supplied by caller
+        assert pot_fn is not None
+        Vraw = np.asarray(pot_fn(qvals))
+        if np.iscomplexobj(Vraw):
+            raise ValueError("Callable potential must be real-valued.")
+        Vraw = Vraw.astype(np.float64, copy=False)
+        if Vraw.shape != z.shape:
+            raise ValueError("Callable potential must return array of shape (nquad,)")
+        mapped_weight = (Vraw / (2.0 * np.pi)).astype(np.float64, copy=False)
+
+    # Stable radial form-factor table:
+    #   R[n,m](q) = sqrt(p!/(p+d)!) * z^(d/2) * L_p^d(z) * exp(-z/2), z=q^2/2
+    logfact = _laguerre_logfact(int(nmax)).astype(np.float64)
+    R_nm = _precompute_R_table(q_nodes.astype(np.float64, copy=False), logfact)
 
     # Index-derived arrays
     idx = np.arange(nmax, dtype=int)
     n_idx, m_idx = np.meshgrid(idx, idx, indexing="ij")
-    p_nm = np.minimum(n_idx, m_idx)
     d_nm = np.abs(n_idx - m_idx)
     D_nm = n_idx - m_idx
 
     extra_sign_nm = (1 - 2 * ((n_idx - m_idx) & 1)).astype(np.int8)  # (-1)^(n-m)
 
-    C_nm = np.empty((nmax, nmax), dtype=np.float64)
-    for n in range(nmax):
-        for m in range(nmax):
-            p = int(p_nm[n, m])
-            d = int(d_nm[n, m])
-            C_nm[n, m] = np.exp(0.5 * (_logfact(p) - _logfact(p + d)))
-
-    # Laguerre table L_p^d(z)
     max_d_sum = 2 * (nmax - 1)
-    L_nm = np.empty((nmax, nmax, z.size), dtype=np.float64)
-    lag_cache: dict[tuple[int, int], RealArray] = {}
-    for n in range(nmax):
-        for m in range(nmax):
-            p = int(p_nm[n, m])
-            d = int(d_nm[n, m])
-            key = (p, d)
-            if key not in lag_cache:
-                lag_cache[key] = sps.eval_genlaguerre(p, d, z).astype(np.float64)
-            L_nm[n, m, :] = lag_cache[key]
-
-    # z powers
-    z_pows = np.empty((max_d_sum + 1, z.size), dtype=np.float64)
-    if is_coulomb:
-        for ds in range(max_d_sum + 1):
-            z_pows[ds] = z ** (0.5 * (ds - 1))
-    else:
-        for ds in range(max_d_sum + 1):
-            z_pows[ds] = z ** (0.5 * ds)
-
     maxD = 2 * (nmax - 1)
     Ns = np.arange(-maxD, maxD + 1, dtype=int)
     minN = int(Ns[0])
@@ -191,6 +168,7 @@ def _build_legendre_precompute(
     lag_J0w: RealArray | None = None
     lag_L_nm: RealArray | None = None
     lag_mask: BoolArray | None = None
+    lag_scale = float(kappa) / np.sqrt(2.0)
     if is_coulomb:
         nlag_eff = min(max(int(nlag), 2 * nmax), 350)
         xg, wg = sps.roots_genlaguerre(nlag_eff, -0.5)
@@ -216,22 +194,18 @@ def _build_legendre_precompute(
 
     return LegendrePrecompute(
         nmax=nmax,
-        kappa=float(kappa),
         G_mags=G_magnitudes,
         G_angles=G_angles,
         z=z,
         w=w,
-        exp_minus_z=exp_minus_z,
-        sqrt2z=sqrt2z,
+        q_nodes=q_nodes,
         arg=arg,
         is_coulomb=is_coulomb,
-        Veff=Veff,
-        z_pows=z_pows,
-        C_nm=C_nm,
+        mapped_weight=mapped_weight,
         extra_sign_nm=extra_sign_nm,
         d_nm=d_nm,
         D_nm=D_nm,
-        L_nm=L_nm,
+        R_nm=R_nm,
         parity=parity,
         phase_table=phase_table,
         phase_power=phase_power.astype(np.complex128),
@@ -239,6 +213,7 @@ def _build_legendre_precompute(
         minN=minN,
         maxD=maxD,
         J_cache={},
+        lag_scale=lag_scale,
         lag_J0w=lag_J0w,
         lag_L_nm=lag_L_nm,
         lag_mask=lag_mask,
@@ -253,7 +228,6 @@ def _evaluate_legendre(
 ) -> ComplexArray:
     nG = pre.G_mags.size
     values = np.zeros((nG, len(select_list)), dtype=np.complex128)
-    sqrt2 = np.sqrt(2.0)
 
     for idx_sel, (n1, m1, n2, m2) in enumerate(select_list):
         d1 = int(pre.d_nm[n1, m1])
@@ -278,24 +252,18 @@ def _evaluate_legendre(
             L1_lag = pre.lag_L_nm[n1]  # (nlag,)  — p=n1, d=0
             L2_lag = pre.lag_L_nm[m2]  # (nlag,)  — p=m2, d=0
             lag_integrand = L1_lag * L2_lag  # (nlag,)
-            radial[pre.lag_mask] = pre.lag_J0w @ lag_integrand
+            radial[pre.lag_mask] = pre.lag_scale * (pre.lag_J0w @ lag_integrand)
             gl_mask = ~pre.lag_mask
             if np.any(gl_mask):
-                term = pre.exp_minus_z * pre.z_pows[ds] * pre.L_nm[n1, m1] * pre.L_nm[m2, n2]
+                term = pre.mapped_weight * pre.R_nm[:, n1, m1] * pre.R_nm[:, m2, n2]
                 radial[gl_mask] = (J_abs[gl_mask] * pre.w[None, :]) @ term
         else:
             # Standard mapped Gauss-Legendre path
-            term = pre.exp_minus_z * pre.z_pows[ds] * pre.L_nm[n1, m1] * pre.L_nm[m2, n2]
-            if not pre.is_coulomb:
-                term = term * pre.Veff
+            term = pre.mapped_weight * pre.R_nm[:, n1, m1] * pre.R_nm[:, m2, n2]
             radial = (J_abs * pre.w[None, :]) @ term  # (nG,)
 
-        C1 = pre.C_nm[n1, m1]
-        C2 = pre.C_nm[n2, m2]
         phase_factor = pre.phase_power[ds]
-        pref = (C1 * C2) * phase_factor
-        if pre.is_coulomb:
-            pref = (float(pre.kappa) * pref) / sqrt2
+        pref = phase_factor
 
         extra = pre.extra_sign_nm[m2, n2]
         N_idx = int(N - pre.minN)

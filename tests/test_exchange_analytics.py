@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 
 import mpmath as mp
 import numpy as np
@@ -104,24 +105,26 @@ def test_n100_backend_sweep_laguerre_ogata():
         dtype=float,
     )
 
-    values_ff, select_ff = get_exchange_kernels_compressed(
-        Gs,
-        angles,
-        n + 1,
-        method="laguerre",
-        select=select,
-    )
-    values_og, select_og = get_exchange_kernels_compressed(
-        Gs,
-        angles,
-        n + 1,
-        method="ogata",
-        nquad=800,
-        scale=0.04,
-        kmin_ogata=5.0,
-        ogata_auto=True,
-        select=select,
-    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error")
+        values_ff, select_ff = get_exchange_kernels_compressed(
+            Gs,
+            angles,
+            n + 1,
+            method="laguerre",
+            select=select,
+        )
+        values_og, select_og = get_exchange_kernels_compressed(
+            Gs,
+            angles,
+            n + 1,
+            method="ogata",
+            nquad=800,
+            scale=0.04,
+            kmin_ogata=5.0,
+            ogata_auto=True,
+            select=select,
+        )
 
     assert select_ff == select
     assert select_og == select
