@@ -1,4 +1,6 @@
 import warnings
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -9,6 +11,15 @@ from quantumhall_matrixelements import (
     materialize_central_onebody_matrix,
 )
 from quantumhall_matrixelements._ho import logfact_table, precompute_radial_table
+
+_MODULE_PATH = (
+    Path(__file__).resolve().parents[1] / "playground" / "reproduce_macdonald_ritchie_tableII.py"
+)
+_SPEC = spec_from_file_location("reproduce_macdonald_ritchie_tableII", _MODULE_PATH)
+if _SPEC is None or _SPEC.loader is None:
+    raise RuntimeError(f"Could not load MacDonald-Ritchie helper from {_MODULE_PATH}")
+_MODULE = module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_MODULE)
 
 
 def test_central_onebody_exact_selection_rule_and_lll_coulomb_value():
@@ -58,6 +69,7 @@ def test_central_onebody_builtin_matches_callable_potentials():
         kappa=kappa,
         qmax=qmax,
         nquad=nquad,
+        method="quadrature",
         select=select,
     )
     values_coulomb_fn, select_coulomb_fn = get_central_onebody_matrix_elements_compressed(
@@ -66,6 +78,7 @@ def test_central_onebody_builtin_matches_callable_potentials():
         potential=lambda q, pref=kappa: pref * 2.0 * np.pi / q,
         qmax=qmax,
         nquad=nquad,
+        method="quadrature",
         select=select,
     )
     assert select_coulomb == select_coulomb_fn == select
@@ -90,6 +103,49 @@ def test_central_onebody_builtin_matches_callable_potentials():
     )
     assert select_const == select_const_fn == select
     assert np.allclose(values_const, values_const_fn, rtol=1e-10, atol=1e-12)
+
+
+def test_central_onebody_coulomb_auto_uses_closed_form_backend():
+    select = [(0, 0, 0, 0), (2, 2, 1, 1), (6, 7, 4, 5)]
+    values_auto, select_auto = get_central_onebody_matrix_elements_compressed(
+        7,
+        8,
+        potential="coulomb",
+        select=select,
+    )
+    values_closed, select_closed = get_central_onebody_matrix_elements_compressed(
+        7,
+        8,
+        potential="coulomb",
+        method="closed_form",
+        select=select,
+    )
+    assert select_auto == select_closed == select
+    assert np.allclose(values_auto, values_closed, rtol=0.0, atol=0.0)
+
+
+def test_central_onebody_closed_form_matches_macdonald_ritchie_reference():
+    select = [(30, 30, 30, 30), (60, 60, 20, 20), (80, 82, 75, 77), (120, 123, 110, 113)]
+    values, select_list = get_central_onebody_matrix_elements_compressed(
+        121,
+        124,
+        potential="coulomb",
+        method="closed_form",
+        select=select,
+    )
+
+    refs = np.array(
+        [
+            -0.5
+            * np.sqrt(np.pi)
+            * (-1.0 if (n_row - n_col) % 2 else 1.0)
+            * _MODULE.V_coulomb_symmetric_gauge(n_row, n_col, n_row - m_row)
+            for n_row, m_row, n_col, _m_col in select_list
+        ],
+        dtype=float,
+    )
+
+    assert np.allclose(values, refs, rtol=0.0, atol=1e-14)
 
 
 def test_central_onebody_canonical_select_is_deterministic_and_materializes_consistently():
@@ -132,6 +188,21 @@ def test_central_onebody_invalid_inputs_fail_loudly():
         )
 
     with pytest.raises(ValueError):
+        get_central_onebody_matrix_elements_compressed(
+            2,
+            2,
+            potential="constant",
+            method="closed_form",
+        )
+
+    with pytest.raises(ValueError):
+        get_central_onebody_matrix_elements_compressed(
+            2,
+            2,
+            method="not-a-method",
+        )
+
+    with pytest.raises(ValueError):
         materialize_central_onebody_matrix(np.array([1.0]), [], 2, 2)
 
 
@@ -148,6 +219,7 @@ def test_central_onebody_blocked_path_matches_full_path(monkeypatch: pytest.Monk
         potential="coulomb",
         qmax=25.0,
         nquad=800,
+        method="quadrature",
         select=[(0, 1, 0, 1), (1, 2, 0, 1), (2, 3, 1, 2), (3, 4, 1, 2)],
     )
     values_full, select_full = get_central_onebody_matrix_elements_compressed(**kwargs)
@@ -170,6 +242,7 @@ def test_central_onebody_large_cutoff_selected_entries_stay_finite_without_warni
             potential="coulomb",
             qmax=35.0,
             nquad=800,
+            method="quadrature",
             select=select,
         )
 

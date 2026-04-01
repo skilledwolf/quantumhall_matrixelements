@@ -214,6 +214,26 @@ def test_central_onebody_coulomb_matches_mpmath_oracle():
     assert np.allclose(values, refs, rtol=1e-10, atol=1e-12)
 
 
+def test_central_onebody_closed_form_matches_mpmath_oracle_beyond_lowest_levels():
+    select = [(6, 7, 4, 5), (8, 8, 3, 3), (10, 12, 7, 9)]
+    values, select_list = get_central_onebody_matrix_elements_compressed(
+        11,
+        13,
+        potential="coulomb",
+        method="closed_form",
+        select=select,
+    )
+
+    refs = np.array(
+        [
+            _central_onebody_coulomb_mpmath(*entry, dps=90, qmax=60.0, segments=12)
+            for entry in select_list
+        ],
+        dtype=float,
+    )
+    assert np.allclose(values, refs, rtol=1e-11, atol=1e-12)
+
+
 def test_higher_ll_pseudopotentials_match_mpmath_oracle():
     for n_ll in (1, 2, 3):
         values = get_haldane_pseudopotentials(

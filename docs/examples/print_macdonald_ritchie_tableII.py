@@ -30,10 +30,9 @@ The pieces of this map have different origins:
 
 The paper also defines the strong-field expansion parameter as
 ``x = (pi / 2 gamma)^(1/2)`` in Eq. (15); the coefficients printed below
-are the corresponding ``alpha^(i)`` values. The cutoff and quadrature
-choices below are intentionally modest so the example stays lightweight;
-for release-grade validation, use the dedicated validation and oracle
-workflows instead.
+are the corresponding ``alpha^(i)`` values. The cutoff choices below are
+intentionally modest so the example stays lightweight; for release-grade
+validation, use the dedicated validation and oracle workflows instead.
 """
 
 from __future__ import annotations
@@ -50,9 +49,6 @@ from quantumhall_matrixelements import get_central_onebody_matrix_elements_compr
 def build_macdonald_ritchie_matrix(
     m: int,
     nmax: int,
-    *,
-    qmax: float = 35.0,
-    nquad: int = 1200,
 ) -> np.ndarray:
     """Build the fixed-``m`` impurity block in the paper's convention."""
     ell = -int(m)
@@ -68,8 +64,7 @@ def build_macdonald_ritchie_matrix(
         nmax,
         nmax + ell,
         potential="coulomb",
-        qmax=qmax,
-        nquad=nquad,
+        method="closed_form",
         select=select,
     )
 

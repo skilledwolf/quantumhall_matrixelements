@@ -1,7 +1,9 @@
 """Central one-body matrix elements in symmetric gauge."""
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Iterable, Sequence
+from functools import cache
 
 import numpy as np
 from numpy.typing import NDArray
@@ -13,6 +15,8 @@ from .._select import DEFAULT_CANONICAL_SELECT_MAX_ENTRIES
 RealArray = NDArray[np.float64]
 OneBodyQuad = tuple[int, int, int, int]
 _ONEBODY_BLOCK_TARGET_BYTES = 128 * 1024 * 1024
+_COULOMB_METHODS = {"auto", "quadrature", "closed_form"}
+_COULOMB_PAPER_TO_PACKAGE_SCALE = -0.5 * math.sqrt(math.pi)
 
 
 def _coerce_select_entry(nmax: int, mmax: int, quad: Sequence[int]) -> OneBodyQuad:
@@ -120,30 +124,70 @@ def _prepare_pair_indices(
     )
 
 
-def get_central_onebody_matrix_elements_compressed(
+def _hyp3f2_terminated_minus_n(nlo: int, delta: int, paper_m: int) -> float:
+    total = 1.0
+    term = 1.0
+    a1 = -float(nlo)
+    a2 = float(delta) + 0.5
+    a3 = 0.5
+    b1 = float(delta) + 1.0
+    b2 = float(paper_m - nlo) + 0.5
+    for k in range(int(nlo)):
+        term *= ((a1 + k) * (a2 + k) * (a3 + k)) / ((b1 + k) * (b2 + k) * (k + 1.0))
+        total += term
+    return total
+
+
+@cache
+def _coulomb_matrix_element_paper(n_row: int, n_col: int, paper_m: int) -> float:
+    n_hi = max(int(n_row), int(n_col))
+    n_lo = min(int(n_row), int(n_col))
+    delta = n_hi - n_lo
+
+    m_lo = n_lo - int(paper_m)
+    m_hi = n_hi - int(paper_m)
+    if m_lo < 0 or m_hi < 0:
+        return 0.0
+
+    logpref = 0.5 * (
+        math.log(2.0 / math.pi)
+        + math.lgamma(n_hi + 1.0)
+        + math.lgamma(m_lo + 1.0)
+        - math.lgamma(n_lo + 1.0)
+        - math.lgamma(m_hi + 1.0)
+    )
+    pref = math.exp(logpref)
+    g1 = math.exp(math.lgamma(delta + 0.5) - math.lgamma(delta + 1.0))
+    g2 = math.exp(math.lgamma(m_lo + 0.5) - math.lgamma(m_lo + 1.0) - 0.5 * math.log(math.pi))
+    hyp = _hyp3f2_terminated_minus_n(n_lo, delta, int(paper_m))
+    return -pref * g1 * g2 * hyp
+
+
+def _get_central_onebody_coulomb_closed_form_values(
+    select_list: list[OneBodyQuad],
+    *,
+    kappa: float,
+) -> RealArray:
+    values = np.zeros(len(select_list), dtype=np.float64)
+    for idx, (n_row, m_row, n_col, m_col) in enumerate(select_list):
+        if (m_row - n_row) != (m_col - n_col):
+            continue
+        parity = -1.0 if (n_row - n_col) % 2 else 1.0
+        paper_value = _coulomb_matrix_element_paper(n_row, n_col, n_row - m_row)
+        values[idx] = float(kappa) * _COULOMB_PAPER_TO_PACKAGE_SCALE * parity * paper_value
+    return values
+
+
+def _get_central_onebody_quadrature_values(
     nmax: int,
     mmax: int,
     *,
-    potential: str | Callable[[RealArray], RealArray] = "coulomb",
-    kappa: float = 1.0,
-    qmax: float = 35.0,
-    nquad: int = 800,
-    select: Iterable[Sequence[int]] | None = None,
-    canonical_select_max_entries: int | None = DEFAULT_CANONICAL_SELECT_MAX_ENTRIES,
-) -> tuple[RealArray, list[OneBodyQuad]]:
-    """Return compressed matrix elements of an origin-centered radial potential."""
-    nmax = int(nmax)
-    mmax = int(mmax)
-    if nmax <= 0 or mmax <= 0:
-        raise ValueError("nmax and mmax must be positive.")
-
-    select_list = _normalize_select(
-        nmax,
-        mmax,
-        select,
-        canonical_select_max_entries=canonical_select_max_entries,
-    )
-
+    potential: str | Callable[[RealArray], RealArray],
+    kappa: float,
+    qmax: float,
+    nquad: int,
+    select_list: list[OneBodyQuad],
+) -> RealArray:
     q_nodes, wq = legendre_q_nodes_weights(int(nquad), float(qmax))
     w_eff = build_radial_potential_weights(
         q_nodes,
@@ -168,11 +212,11 @@ def get_central_onebody_matrix_elements_compressed(
                 w_eff,
                 radial[:, n_row, n_col] * radial[:, m_row, m_col],
             )
-        return values, select_list
+        return values
 
     signs, n_pair_idx, m_pair_idx, pair_rows, pair_cols = _prepare_pair_indices(select_list)
     if pair_rows.size == 0:
-        return np.zeros(len(select_list), dtype=np.float64), select_list
+        return np.zeros(len(select_list), dtype=np.float64)
 
     bytes_per_q = np.dtype(np.float64).itemsize * (
         max_index * max_index + pair_rows.size + 3 * len(select_list)
@@ -193,8 +237,64 @@ def get_central_onebody_matrix_elements_compressed(
             rhs,
             optimize=True,
         )
+    return values
 
-    return values, select_list
+
+def get_central_onebody_matrix_elements_compressed(
+    nmax: int,
+    mmax: int,
+    *,
+    potential: str | Callable[[RealArray], RealArray] = "coulomb",
+    kappa: float = 1.0,
+    qmax: float = 35.0,
+    nquad: int = 800,
+    method: str = "auto",
+    select: Iterable[Sequence[int]] | None = None,
+    canonical_select_max_entries: int | None = DEFAULT_CANONICAL_SELECT_MAX_ENTRIES,
+) -> tuple[RealArray, list[OneBodyQuad]]:
+    """Return compressed matrix elements of an origin-centered radial potential.
+
+    ``method="auto"`` uses a closed-form backend for built-in Coulomb matrix
+    elements and the Legendre quadrature backend otherwise. Use
+    ``method="quadrature"`` to force the generic integral path or
+    ``method="closed_form"`` to require the Coulomb closed form explicitly.
+    """
+    nmax = int(nmax)
+    mmax = int(mmax)
+    if nmax <= 0 or mmax <= 0:
+        raise ValueError("nmax and mmax must be positive.")
+
+    select_list = _normalize_select(
+        nmax,
+        mmax,
+        select,
+        canonical_select_max_entries=canonical_select_max_entries,
+    )
+    method = str(method)
+    if method not in _COULOMB_METHODS:
+        raise ValueError(f"method must be one of {sorted(_COULOMB_METHODS)!r}; got {method!r}.")
+
+    use_closed_form = method == "closed_form" or (method == "auto" and potential == "coulomb")
+    if use_closed_form:
+        if potential != "coulomb":
+            raise ValueError('method="closed_form" is only available for potential="coulomb".')
+        return (
+            _get_central_onebody_coulomb_closed_form_values(select_list, kappa=float(kappa)),
+            select_list,
+        )
+
+    return (
+        _get_central_onebody_quadrature_values(
+            nmax,
+            mmax,
+            potential=potential,
+            kappa=float(kappa),
+            qmax=float(qmax),
+            nquad=int(nquad),
+            select_list=select_list,
+        ),
+        select_list,
+    )
 
 
 def materialize_central_onebody_matrix(
