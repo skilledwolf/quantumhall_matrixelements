@@ -29,7 +29,7 @@ extensions = [
 ]
 
 templates_path = ["_templates"]
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "examples/README.rst"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 myst_enable_extensions = [
     "amsmath",
@@ -51,7 +51,7 @@ mathjax3_config = {
 }
 
 sphinx_gallery_conf = {
-    "examples_dirs": "examples",
+    "examples_dirs": "../examples",
     "gallery_dirs": "generated/gallery",
     "filename_pattern": r"/plot_.*\.py",
     "download_all_examples": False,
