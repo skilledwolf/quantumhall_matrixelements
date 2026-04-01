@@ -66,12 +66,16 @@ def get_form_factors(
     Parameters
     ----------
     q_magnitudes, q_angles :
-        Arrays with the same shape, describing |G|ℓ_B and polar angle θ.
+        Arrays with the same shape, describing the wavevector magnitude ``|q|``
+        and polar angle ``θ``.
     nmax :
         Number of Landau levels (0..nmax-1).
     lB :
-        Magnetic length ℓ_B (default 1.0). ``q_magnitudes`` are understood
-        to be in units of 1/ℓ_B.
+        Magnetic length ``ℓ_B`` (default 1.0). The form factors depend on the
+        dimensionless combination ``|q|ℓ_B``, so the implementation multiplies
+        ``q_magnitudes`` by ``lB`` internally. If you already work with
+        dimensionless ``|q|ℓ_B`` values, leave ``lB=1`` and pass those values
+        directly as ``q_magnitudes``.
     sign_magneticfield :
         Sign of the charge–field product σ = sgn(q B_z). Use ``-1`` for the
         electron/positive-B convention used internally; ``+1`` returns the

@@ -75,6 +75,11 @@ print("F shape:", F.shape)
 print("X shape:", X.shape)
 ```
 
+`get_form_factors` evaluates the dimensionless combination `|q|ℓ_B`. If your
+inputs are already dimensionless, pass them directly and keep `lB=1` (the
+default). If instead you have physical wavevector magnitudes in inverse-length
+units, pass those as `q_magnitudes` together with the desired `lB`.
+
 ### Avoiding huge allocations
 
 The exchange kernel scales as ``nmax^4`` per ``G``. Low-level backends return a

@@ -53,6 +53,18 @@ def test_form_factors_small_q_expansion_lowest_LL():
     assert np.allclose(F, approx, rtol=0, atol=1e-10)
 
 
+def test_form_factors_lB_matches_dimensionless_scaling():
+    nmax = 3
+    q_physical = np.array([0.2, 0.5])
+    thetas = np.array([0.1, 0.3])
+    lB = 2.5
+
+    F_with_lB = get_form_factors(q_physical, thetas, nmax, lB=lB)
+    F_dimensionless = get_form_factors(q_physical * lB, thetas, nmax, lB=1.0)
+
+    assert np.allclose(F_with_lB, F_dimensionless)
+
+
 def test_form_factors_offdiag_scaling_power():
     nmax = 3
     qs = np.array([1e-4])
