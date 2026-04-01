@@ -81,7 +81,8 @@ def get_exchange_kernels(
     **kwargs :
         Additional arguments passed to the backend (e.g. ``nquad``, ``scale``).
         Common keywords include ``sign_magneticfield`` (±1) to select the
-        magnetic-field orientation convention.
+        magnetic-field orientation convention and, for the Laguerre backend,
+        ``workspace_limit_bytes`` to cap dense quadrature-table allocations.
 
     Notes
     -----
@@ -149,6 +150,11 @@ def get_exchange_kernels_compressed(
 
     Unlike :func:`get_exchange_kernels`, this function never materializes the full
     5D tensor, and always returns the select list used by the backend.
+
+    If ``select`` is omitted, the backend still constructs the canonical
+    symmetry-reduced list, so the returned representation remains O(``nmax^4``)
+    in the number of stored entries. Pass an explicit ``select=...`` to compute
+    only the entries you need.
     """
     chosen = (method or "laguerre").strip().lower()
     backend_fn: Any

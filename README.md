@@ -94,6 +94,14 @@ a safety guard that prevents accidental large allocations:
 To avoid full ``nmax^4`` scaling, use ``get_exchange_kernels_compressed`` and
 provide an explicit ``select=...`` to compute only the entries you need.
 
+Calling ``get_exchange_kernels_compressed(select=None)`` still builds the
+canonical symmetry-reduced list, so it avoids 5D materialization but not the
+underlying O(``nmax^4``) output scaling.
+
+For the ``'laguerre'`` backend, dense Gauss-Legendre work tables are guarded by
+``workspace_limit_bytes`` (default 512 MiB). Pass ``workspace_limit_bytes=None``
+to disable that backend-level guard.
+
 To use a user-provided interaction, pass a callable directly as `potential`:
 
 ```python

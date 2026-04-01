@@ -26,6 +26,7 @@ _FAST_LAGUERRE_PASSTHROUGH_KEYS = {
     "potential",
     "qmax",
     "sign_magneticfield",
+    "workspace_limit_bytes",
 }
 
 
@@ -232,6 +233,10 @@ def _maybe_build_fast_laguerre_constructor(
     else:
         return None
 
+    precompute_kwargs: dict[str, Any] = {}
+    if "workspace_limit_bytes" in kwargs:
+        precompute_kwargs["workspace_limit_bytes"] = kwargs["workspace_limit_bytes"]
+
     precompute = build_exchange_fock_precompute(
         nmax,
         G_magnitudes_arr,
@@ -241,6 +246,7 @@ def _maybe_build_fast_laguerre_constructor(
         kappa=kappa,
         potential=fast_potential,
         include_minus=False,
+        **precompute_kwargs,
     )
 
     def apply(rho: ComplexArray, include_minus: bool = True) -> ComplexArray:

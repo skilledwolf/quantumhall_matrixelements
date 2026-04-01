@@ -66,6 +66,49 @@ def test_canonical_select_guard_is_bypassed_for_explicit_select():
     assert select_list == [(0, 0, 0, 0)]
 
 
+def test_laguerre_workspace_guard_raises_for_compressed_call():
+    Gs = np.array([12.0], dtype=float)
+    thetas = np.array([0.0], dtype=float)
+
+    with pytest.raises(MemoryError):
+        get_exchange_kernels_compressed(
+            Gs,
+            thetas,
+            3,
+            method="laguerre",
+            nquad=80,
+            select=[(0, 0, 0, 0)],
+            workspace_limit_bytes=1,
+        )
+
+
+def test_laguerre_workspace_limit_none_bypasses_guard_without_changing_values():
+    Gs = np.array([0.0, 4.0], dtype=float)
+    thetas = np.array([0.0, 0.2], dtype=float)
+    select = [(0, 0, 0, 0), (1, 0, 1, 0)]
+
+    values_default, select_default = get_exchange_kernels_compressed(
+        Gs,
+        thetas,
+        3,
+        method="laguerre",
+        nquad=120,
+        select=select,
+    )
+    values_unbounded, select_unbounded = get_exchange_kernels_compressed(
+        Gs,
+        thetas,
+        3,
+        method="laguerre",
+        nquad=120,
+        select=select,
+        workspace_limit_bytes=None,
+    )
+
+    assert select_default == select_unbounded == select
+    assert np.allclose(values_default, values_unbounded, rtol=0.0, atol=0.0)
+
+
 def test_get_exchange_kernels_full_matches_compressed_roundtrip():
     Gs = np.array([0.0, 1.0], dtype=float)
     thetas = np.array([0.0, 0.1], dtype=float)

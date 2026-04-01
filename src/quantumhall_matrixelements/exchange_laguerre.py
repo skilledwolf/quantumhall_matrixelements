@@ -27,6 +27,7 @@ from numpy.polynomial.legendre import leggauss
 from numpy.typing import NDArray
 from scipy import special
 
+from ._materialize import DEFAULT_WORKSPACE_LIMIT_BYTES, format_bytes
 from ._select import DEFAULT_CANONICAL_SELECT_MAX_ENTRIES, normalize_select
 
 ComplexArray = NDArray[np.complex128]
@@ -61,6 +62,48 @@ def cartesian_to_polar(Gxy: RealArray) -> tuple[RealArray, RealArray]:
 def _logfact(nmax: int) -> RealArray:
     n = np.arange(nmax + 1, dtype=np.float64)
     return cast("RealArray", special.gammaln(n + 1.0))
+
+
+def _estimate_laguerre_table_bytes(nG: int, nquad: int, nmax: int, max_order: int) -> int:
+    """Estimate dense Laguerre table memory before allocating quadrature work arrays."""
+    float_bytes = np.dtype(np.float64).itemsize
+    complex_bytes = np.dtype(np.complex128).itemsize
+    max_d = int(nmax) - 1
+
+    q_weight_bytes = 2 * int(nquad) * float_bytes
+    radial_bytes = int(nquad) * int(nmax) * int(nmax) * float_bytes
+    kernel_bytes = int(nG) * int(nquad) * (2 * int(max_order) + 1) * float_bytes
+    phase_bytes = 2 * int(nG) * (2 * max_d + 1) * complex_bytes
+
+    return int(q_weight_bytes + radial_bytes + kernel_bytes + phase_bytes)
+
+
+def _guard_laguerre_table_bytes(
+    nG: int,
+    nquad: int,
+    nmax: int,
+    max_order: int,
+    *,
+    workspace_limit_bytes: float | int | None,
+    context: str,
+) -> None:
+    """Fail fast before allocating large dense Laguerre tables."""
+    if workspace_limit_bytes is None:
+        return
+
+    est = _estimate_laguerre_table_bytes(nG, nquad, nmax, max_order)
+    if est <= float(workspace_limit_bytes):
+        return
+
+    human_est = format_bytes(float(est))
+    human_lim = format_bytes(float(workspace_limit_bytes))
+    raise MemoryError(
+        f"Refusing to allocate dense Laguerre workspace (~{human_est} > {human_lim}) "
+        f"for {context} with nG={int(nG)}, nquad={int(nquad)}, nmax={int(nmax)}, "
+        f"max_order={int(max_order)}. Reduce nquad/qmax, split the G grid, "
+        "enable Ogata for large |G|, increase workspace_limit_bytes, or pass "
+        "workspace_limit_bytes=None to disable this guard."
+    )
 
 
 def _legendre_q_nodes_weights(N: int, qmax: float) -> tuple[RealArray, RealArray]:
@@ -476,16 +519,29 @@ def build_exchange_fock_precompute(
     kappa: float = 1.0,
     potential: Callable[[RealArray], RealArray] | None = None,
     include_minus: bool = True,
+    workspace_limit_bytes: float | int | None = DEFAULT_WORKSPACE_LIMIT_BYTES,
 ) -> ExchangeFockPrecompute:
     """Precompute the fast Laguerre Fock-application tables.
 
     The default ``sigma=-1`` matches the package-wide
-    ``sign_magneticfield=-1`` convention used by the public APIs.
+    ``sign_magneticfield=-1`` convention used by the public APIs. The dense
+    precompute tables are guarded by ``workspace_limit_bytes`` by default.
     """
     G_mags = np.asarray(G_mags, dtype=np.float64)
     G_thetas = np.asarray(G_thetas, dtype=np.float64)
     if G_mags.ndim != 1 or G_thetas.ndim != 1 or G_mags.shape != G_thetas.shape:
         raise ValueError("G_mags and G_thetas must be 1D arrays with same shape")
+
+    max_d = int(nmax) - 1
+    max_order = 2 * max_d
+    _guard_laguerre_table_bytes(
+        int(G_mags.size),
+        int(params.N),
+        int(nmax),
+        max_order,
+        workspace_limit_bytes=workspace_limit_bytes,
+        context="Laguerre Fock precompute",
+    )
 
     q_nodes, wq = _legendre_q_nodes_weights(params.N, params.qmax)
 
@@ -501,8 +557,6 @@ def build_exchange_fock_precompute(
     logfact = _logfact(int(nmax)).astype(np.float64)
     R = _precompute_R_table(q_nodes, logfact)
 
-    max_d = int(nmax) - 1
-    max_order = 2 * max_d
     kernels = _precompute_bessel_table(G_mags, q_nodes, max_order)
 
     phase_in, phase_out = _build_phase_tables(G_thetas, max_d, float(sigma))
@@ -541,6 +595,7 @@ def get_exchange_kernels_laguerre(
     sign_magneticfield: int = -1,
     select: Iterable[tuple[int, int, int, int]] | None = None,
     canonical_select_max_entries: int | None = DEFAULT_CANONICAL_SELECT_MAX_ENTRIES,
+    workspace_limit_bytes: float | int | None = DEFAULT_WORKSPACE_LIMIT_BYTES,
 ) -> tuple[ComplexArray, list[tuple[int, int, int, int]]]:
     """Compute exchange kernels using the finite-q fast precompute tables.
 
@@ -567,6 +622,9 @@ def get_exchange_kernels_laguerre(
     kmin_ogata : float
         Threshold on ``|G|`` above which Ogata quadrature is used (when
         ``use_ogata=True``).
+    workspace_limit_bytes : int, float, or None
+        Soft cap on the dense Gauss-Legendre work tables used by this backend.
+        Pass ``None`` to disable the guard.
 
     Returns
     -------
@@ -644,6 +702,18 @@ def get_exchange_kernels_laguerre(
                 int(nquad),
                 int(np.ceil(8.0 * G_max_gl * qmax_f / (2.0 * np.pi))),
             )
+        k_abs_max = int(np.max(np.abs((sel_m1 - sel_n1) - (sel_m2 - sel_n2))))
+        max_order = min(2 * max_d, k_abs_max)
+
+        _guard_laguerre_table_bytes(
+            int(G_gl.size),
+            int(nquad_gl),
+            int(nmax),
+            int(max_order),
+            workspace_limit_bytes=workspace_limit_bytes,
+            context="Laguerre exchange kernels",
+        )
+
         q_nodes, wq = _legendre_q_nodes_weights(nquad_gl, qmax_f)
 
         if is_callable:
@@ -661,9 +731,6 @@ def get_exchange_kernels_laguerre(
             w_eff = (wq * (q_nodes / (2.0 * np.pi)) * float(kappa)).astype(np.float64)
 
         R = _precompute_R_table(q_nodes, logfact)
-
-        k_abs_max = int(np.max(np.abs((sel_m1 - sel_n1) - (sel_m2 - sel_n2))))
-        max_order = min(2 * max_d, k_abs_max)
 
         kernels = _precompute_bessel_table(G_gl, q_nodes, max_order)
 

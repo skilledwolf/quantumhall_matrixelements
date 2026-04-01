@@ -7,6 +7,8 @@ import numpy as np
 
 # Default soft cap for allocating a full (nG, nmax, nmax, nmax, nmax) complex tensor.
 DEFAULT_FULL_TENSOR_LIMIT_BYTES = 512 * 1024 * 1024  # 512 MiB
+# Default soft cap for dense backend work tables such as quadrature precomputes.
+DEFAULT_WORKSPACE_LIMIT_BYTES = DEFAULT_FULL_TENSOR_LIMIT_BYTES
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -15,7 +17,7 @@ if TYPE_CHECKING:
     Quad = tuple[int, int, int, int]
 
 
-def _format_bytes(nbytes: float) -> str:
+def format_bytes(nbytes: float) -> str:
     units = ["B", "KiB", "MiB", "GiB", "TiB"]
     size = float(nbytes)
     for unit in units:
@@ -77,8 +79,8 @@ def guard_full_tensor_materialization(
         return
 
     if est > float(materialize_limit_bytes):
-        human_est = _format_bytes(est)
-        human_lim = _format_bytes(float(materialize_limit_bytes))
+        human_est = format_bytes(est)
+        human_lim = format_bytes(float(materialize_limit_bytes))
         raise MemoryError(
             f"Refusing to materialize full ({nG}, {nmax}, {nmax}, {nmax}, {nmax}) tensor "
             f"(~{human_est} > {human_lim}) for {backend_name}; "
@@ -141,6 +143,8 @@ def materialize_full_tensor(
 __all__ = [
     "guard_full_tensor_materialization",
     "DEFAULT_FULL_TENSOR_LIMIT_BYTES",
+    "DEFAULT_WORKSPACE_LIMIT_BYTES",
     "build_canonical_select",
+    "format_bytes",
     "materialize_full_tensor",
 ]

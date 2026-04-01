@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from quantumhall_matrixelements import (
     get_exchange_kernels,
@@ -83,3 +84,18 @@ def test_fock_constructor_laguerre_constant_matches_full_tensor_contraction():
     out = fock(rho)
 
     assert np.allclose(out, ref, rtol=1e-10, atol=1e-12)
+
+
+def test_fock_constructor_laguerre_workspace_guard_uses_fast_path():
+    Gs = np.array([0.0, 12.0])
+    thetas = np.array([0.0, 0.1])
+
+    with pytest.raises(MemoryError):
+        get_fockmatrix_constructor(
+            Gs,
+            thetas,
+            3,
+            method="laguerre",
+            nquad=80,
+            workspace_limit_bytes=1,
+        )
