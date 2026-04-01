@@ -23,11 +23,16 @@ from typing import TypeVar, cast
 
 import numpy as np
 from numba import njit, prange
-from numpy.polynomial.legendre import leggauss
 from numpy.typing import NDArray
 from scipy import special
 
+from ._ho import (
+    build_exchange_phase_tables,
+    logfact_table,
+    precompute_radial_table,
+)
 from ._materialize import DEFAULT_WORKSPACE_LIMIT_BYTES, format_bytes
+from ._quadrature import build_radial_potential_weights, legendre_q_nodes_weights
 from ._select import DEFAULT_CANONICAL_SELECT_MAX_ENTRIES, normalize_select
 
 ComplexArray = NDArray[np.complex128]
@@ -60,8 +65,7 @@ def cartesian_to_polar(Gxy: RealArray) -> tuple[RealArray, RealArray]:
 
 
 def _logfact(nmax: int) -> RealArray:
-    n = np.arange(nmax + 1, dtype=np.float64)
-    return cast("RealArray", special.gammaln(n + 1.0))
+    return logfact_table(nmax)
 
 
 def _estimate_laguerre_table_bytes(nG: int, nquad: int, nmax: int, max_order: int) -> int:
@@ -107,10 +111,7 @@ def _guard_laguerre_table_bytes(
 
 
 def _legendre_q_nodes_weights(N: int, qmax: float) -> tuple[RealArray, RealArray]:
-    t, w = leggauss(int(N))
-    q = 0.5 * float(qmax) * (t + 1.0)
-    wq = 0.5 * float(qmax) * w
-    return q.astype(np.float64), wq.astype(np.float64)
+    return legendre_q_nodes_weights(N, qmax)
 
 
 # ---------------------------------------------------------------------------
@@ -159,46 +160,9 @@ def _ogata_q_nodes(nu: int, h: float, N: int) -> tuple[RealArray, RealArray]:
     return x.astype(np.float64), series_fac.astype(np.float64)
 
 
-@_typed_njit(fastmath=False)
 def _precompute_R_table(q_nodes: RealArray, logfact: RealArray) -> RealArray:
     """Compute R[iq, n, m] such that F_{n,m}(q,phi)=phase*R[iq,n,m]."""
-    Nq = q_nodes.size
-    nmax = logfact.size - 1
-    R = np.empty((Nq, nmax, nmax), dtype=np.float64)
-
-    # Ltab[a, k] = L_k^a(x) for a=0..nmax-1, k=0..nmax-1
-    Ltab = np.empty((nmax, nmax), dtype=np.float64)
-    pow_x = np.empty(nmax, dtype=np.float64)
-
-    for iq in range(Nq):
-        q = q_nodes[iq]
-        x = 0.5 * q * q
-
-        for a in range(nmax):
-            Ltab[a, 0] = 1.0
-            if nmax > 1:
-                Ltab[a, 1] = 1.0 + a - x
-            for k in range(1, nmax - 1):
-                # (k+1) L_{k+1} = (2k+1+a-x)L_k - (k+a)L_{k-1}
-                Ltab[a, k + 1] = (
-                    (2 * k + 1 + a - x) * Ltab[a, k] - (k + a) * Ltab[a, k - 1]
-                ) / (k + 1)
-
-        logx = np.log(x)
-        for a in range(nmax):
-            pow_x[a] = np.exp(0.5 * a * logx)
-        ex = np.exp(-0.5 * x)
-
-        for n in range(nmax):
-            for np_ in range(nmax):
-                a = np_ - n
-                if a < 0:
-                    a = -a
-                kmin = n if n < np_ else np_
-                ratio = np.exp(0.5 * (logfact[kmin] - logfact[kmin + a]))
-                R[iq, np_, n] = ratio * pow_x[a] * Ltab[a, kmin] * ex
-
-    return R
+    return precompute_radial_table(q_nodes, logfact)
 
 
 def _precompute_bessel_table(G_mags: RealArray, q_nodes: RealArray, max_order: int) -> RealArray:
@@ -227,25 +191,7 @@ def _precompute_bessel_table(G_mags: RealArray, q_nodes: RealArray, max_order: i
 def _build_phase_tables(
     G_thetas: RealArray, max_d: int, sigma: float
 ) -> tuple[ComplexArray, ComplexArray]:
-    d_vals = np.arange(-max_d, max_d + 1, dtype=np.int32)
-    phase_base = (1j) ** np.abs(d_vals)
-    phase_base = phase_base.astype(np.complex128)
-
-    phase_base_in = phase_base * ((-1.0) ** d_vals).astype(np.float64)
-    phase_base_out = phase_base
-
-    nG = int(G_thetas.size)
-    phase_in = np.empty((nG, d_vals.size), dtype=np.complex128)
-    phase_out = np.empty_like(phase_in)
-
-    for g in range(nG):
-        theta = float(G_thetas[g])
-        ang = float(sigma) * theta * d_vals.astype(np.float64)
-        epos = np.cos(ang) + 1j * np.sin(ang)
-        phase_out[g, :] = phase_base_out * epos
-        phase_in[g, :] = phase_base_in * np.conjugate(epos)
-
-    return phase_in, phase_out
+    return build_exchange_phase_tables(G_thetas, max_d, sigma)
 
 
 @_typed_njit(parallel=True, fastmath=False)
@@ -545,14 +491,12 @@ def build_exchange_fock_precompute(
 
     q_nodes, wq = _legendre_q_nodes_weights(params.N, params.qmax)
 
-    if potential is None:
-        w_eff = (float(kappa) * wq).astype(np.float64)
-    else:
-        Vraw = np.asarray(potential(q_nodes))
-        if np.iscomplexobj(Vraw):
-            raise ValueError("Callable potential must be real-valued.")
-        V = Vraw.astype(np.float64, copy=False)
-        w_eff = (wq * (q_nodes / (2.0 * np.pi)) * V).astype(np.float64)
+    w_eff = build_radial_potential_weights(
+        q_nodes,
+        wq,
+        potential="coulomb" if potential is None else potential,
+        kappa=kappa,
+    )
 
     logfact = _logfact(int(nmax)).astype(np.float64)
     R = _precompute_R_table(q_nodes, logfact)
@@ -716,19 +660,12 @@ def get_exchange_kernels_laguerre(
 
         q_nodes, wq = _legendre_q_nodes_weights(nquad_gl, qmax_f)
 
-        if is_callable:
-            assert callable(potential)
-            Vraw = np.asarray(potential(q_nodes))
-            if np.iscomplexobj(Vraw):
-                raise ValueError("Callable potential must be real-valued.")
-            V = Vraw.astype(np.float64, copy=False)
-            if V.shape != q_nodes.shape:
-                raise ValueError("Callable potential must return array of shape (nquad,)")
-            w_eff = (wq * (q_nodes / (2.0 * np.pi)) * V).astype(np.float64)
-        elif pot_kind == "coulomb":
-            w_eff = (float(kappa) * wq).astype(np.float64)
-        else:
-            w_eff = (wq * (q_nodes / (2.0 * np.pi)) * float(kappa)).astype(np.float64)
+        w_eff = build_radial_potential_weights(
+            q_nodes,
+            wq,
+            potential=potential,
+            kappa=kappa,
+        )
 
         R = _precompute_R_table(q_nodes, logfact)
 

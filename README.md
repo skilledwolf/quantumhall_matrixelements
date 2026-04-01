@@ -2,10 +2,14 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17807688.svg)](https://doi.org/10.5281/zenodo.17807688)
 
-Landau-level plane-wave form factors and exchange kernels for quantum Hall systems in a small, reusable package (useful for Hartree-Fock and related calculations). It provides:
+Landau-level plane-wave form factors, exchange kernels, and symmetric-gauge helper
+objects for quantum Hall systems in a small, reusable package (useful for
+Hartree-Fock, impurity, and pseudopotential calculations). It provides:
 
 - Analytic Landau-level plane-wave form factors $F_{n',n}^\sigma(\mathbf{q})$.
 - Exchange kernels $X_{n_1 m_1 n_2 m_2}^\sigma(\mathbf{G})$. 
+- Symmetric-gauge guiding-center and factorized density form factors.
+- Central one-body matrix elements, plane Haldane pseudopotentials, and LLL disk two-body reconstruction helpers.
 - Symmetry diagnostics for verifying kernel implementations. 
 
 ### Plane-Wave Landau-level Form Factors 
@@ -79,6 +83,41 @@ print("X shape:", X.shape)
 inputs are already dimensionless, pass them directly and keep `lB=1` (the
 default). If instead you have physical wavevector magnitudes in inverse-length
 units, pass those as `q_magnitudes` together with the desired `lB`.
+
+## Symmetric-gauge helpers
+
+The package also provides factorized symmetric-gauge building blocks in the
+single-particle basis `|n, m>`:
+
+```python
+from quantumhall_matrixelements import (
+    get_factorized_density_form_factors,
+    get_guiding_center_form_factors,
+    get_haldane_pseudopotentials,
+    get_twobody_disk_from_pseudopotentials_compressed,
+)
+
+F_cyc, G_gc = get_factorized_density_form_factors(
+    Gs_dimless,
+    thetas,
+    nmax=3,
+    mmax=5,
+)
+
+G_only = get_guiding_center_form_factors(Gs_dimless, thetas, mmax=5)
+V_m = get_haldane_pseudopotentials(8, n_ll=0)
+values, select = get_twobody_disk_from_pseudopotentials_compressed(V_m, mmax=4)
+```
+
+The density operator factorizes as
+`<n',m'|exp(i q·r)|n,m> = F_{n',n}(q) G_{m',m}(q)`, so the public API returns
+the cyclotron and guiding-center pieces separately instead of materializing a
+large `(nq, nmax, mmax, nmax, mmax)` tensor.
+
+For origin-centered rotationally symmetric one-body potentials, use
+`get_central_onebody_matrix_elements_compressed(...)` to obtain a compressed
+`(values, select_list)` representation in the explicit-index form
+`(n_row, m_row, n_col, m_col)`.
 
 ### Avoiding huge allocations
 
@@ -187,7 +226,8 @@ The package provides three backends for computing exchange kernels:
    - **Recommended for**: Faster cross-checks against `hankel`, and workloads dominated by larger |G|.
 
 ## Notes
-The following wavefunction is used to find all matrix elements:
+The plane-wave and exchange-kernel quantities use the following Landau-gauge
+wavefunction convention:
 
 $$
 \Psi_{nX}^\sigma(x,y)

@@ -4,8 +4,14 @@ This package provides reusable numerical kernels for quantum Hall matrix
 elements in a Landau-level basis:
 
 - `get_form_factors` for plane-wave form factors :math:`F_{n',n}(G)`.
+- `get_guiding_center_form_factors` and
+  `get_factorized_density_form_factors` for symmetric-gauge building blocks.
 - `get_exchange_kernels` (and backend-specific variants) for exchange kernels
   :math:`X_{n_1 m_1 n_2 m_2}(G)` built from LL wavefunctions.
+- `get_central_onebody_matrix_elements_compressed`,
+  `get_haldane_pseudopotentials`, and
+  `get_twobody_disk_from_pseudopotentials_compressed` for symmetric-gauge
+  one- and two-body workflows.
 - Optional symmetry diagnostics for sanity-checking kernel implementations.
 """
 from __future__ import annotations
@@ -37,6 +43,15 @@ from .exchange_laguerre import (
 from .exchange_ogata import get_exchange_kernels_Ogata
 from .fock import build_fockmatrix_apply, get_fockmatrix_constructor, get_fockmatrix_constructor_hf
 from .planewave import get_form_factors
+from .symmetric import (
+    get_central_onebody_matrix_elements_compressed,
+    get_factorized_density_form_factors,
+    get_guiding_center_form_factors,
+    get_haldane_pseudopotentials,
+    get_twobody_disk_from_pseudopotentials_compressed,
+    materialize_central_onebody_matrix,
+    materialize_twobody_disk_tensor,
+)
 
 ComplexArray = NDArray[np.complex128]
 RealArray = NDArray[np.float64]
@@ -216,6 +231,8 @@ except PackageNotFoundError:  # pragma: no cover - fallback for local, non-insta
 
 __all__ = [
     "get_form_factors",
+    "get_guiding_center_form_factors",
+    "get_factorized_density_form_factors",
     "get_form_factors_opposite_field",
     "get_exchange_kernels",
     "get_exchange_kernels_compressed",
@@ -229,5 +246,10 @@ __all__ = [
     "QuadratureParams",
     "ExchangeFockPrecompute",
     "build_exchange_fock_precompute",
+    "get_central_onebody_matrix_elements_compressed",
+    "materialize_central_onebody_matrix",
+    "get_haldane_pseudopotentials",
+    "get_twobody_disk_from_pseudopotentials_compressed",
+    "materialize_twobody_disk_tensor",
     "__version__",
 ]
