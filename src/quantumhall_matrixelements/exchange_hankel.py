@@ -4,8 +4,6 @@ from __future__ import annotations
 from collections import OrderedDict
 from collections.abc import Callable, Iterable
 from functools import cache
-from importlib.metadata import PackageNotFoundError
-from importlib.metadata import version as _metadata_version
 from typing import cast
 
 import numpy as np
@@ -24,26 +22,16 @@ def _parity_factor(N: int) -> int:
 
 
 @cache
-def _get_hankel_nodes(nu: int, N: int, h: float) -> tuple[RealArray, RealArray, int, int, float]:
-    ht = HankelTransform(nu=int(nu), N=int(N), h=float(h))
+def _get_hankel_nodes(nu: int, N: int, h: float) -> tuple[RealArray, RealArray]:
+    ht = HankelTransform(nu=int(nu), N=int(N), h=float(h), alt=False)
     x = np.asarray(ht.x, dtype=np.float64)
-    try:
-        series_fac = np.asarray(ht._series_fac, dtype=np.float64)
-        r_power = int(ht._r_power)
-        k_power = int(ht._k_power)
-        norm = float(ht._norm(False))
-    except AttributeError as exc:  # pragma: no cover - depends on external package internals
-        try:
-            hankel_ver = _metadata_version("hankel")
-        except PackageNotFoundError:
-            hankel_ver = "unknown"
-        raise RuntimeError(
-            "Incompatible 'hankel' package detected while extracting Hankel quadrature nodes. "
-            "This backend currently relies on internal HankelTransform attributes "
-            "('_series_fac', '_r_power', '_k_power', '_norm') that may change between versions. "
-            f"Detected hankel=={hankel_ver}. Please install a compatible version."
-        ) from exc
-    return x, series_fac, r_power, k_power, norm
+    # For the standard (alt=False) transform used here, the public quadrature
+    # factors reproduce the old internal `_series_fac` exactly without relying
+    # on private hankel attributes.
+    series_fac = np.pi * np.asarray(ht.w, dtype=np.float64)
+    series_fac = series_fac * np.asarray(ht.kernel, dtype=np.float64)
+    series_fac = series_fac * np.asarray(ht.dpsi, dtype=np.float64)
+    return x, series_fac
 
 
 def get_exchange_kernels_hankel(
@@ -226,9 +214,9 @@ def get_exchange_kernels_hankel(
             if not quad_union:
                 continue
 
-            x, series_fac, r_power, k_power, norm = _get_hankel_nodes(absN, hankel_N, hankel_h)
-            x_pow = x**r_power
-            denom_pow = k_power + r_power + 1
+            x, series_fac = _get_hankel_nodes(absN, hankel_N, hankel_h)
+            x_pow = x
+            denom_pow = 2
 
             # ds values that can appear for this |N|
             n1_u = np.fromiter((q[0] for q in quad_union), dtype=int, count=len(quad_union))
@@ -272,7 +260,7 @@ def get_exchange_kernels_hankel(
                 log_r = np.log(q) - 0.5 * np.log(2.0)
                 common = -z
 
-                W = (norm * series_fac[:m_nodes] * (x_pow[:m_nodes]))[None, :] / (
+                W = (series_fac[:m_nodes] * x_pow[:m_nodes])[None, :] / (
                     k_group[:, None] ** denom_pow
                 )
 
