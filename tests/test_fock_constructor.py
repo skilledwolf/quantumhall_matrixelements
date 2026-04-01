@@ -51,3 +51,35 @@ def test_fock_constructor_hf_matches_full_tensor_contraction():
 
     assert np.allclose(out_minus, ref, rtol=1e-10, atol=1e-12)
     assert np.allclose(out_minus, -out_plus, rtol=0.0, atol=0.0)
+
+
+def test_fock_constructor_laguerre_constant_matches_full_tensor_contraction():
+    nmax = 3
+    Gs = np.array([0.0, 1.2])
+    thetas = np.array([0.0, 0.3])
+    kappa = 0.4
+
+    X_full = get_exchange_kernels(
+        Gs,
+        thetas,
+        nmax,
+        method="laguerre",
+        potential="constant",
+        kappa=kappa,
+        nquad=300,
+    )
+    rho = _random_hermitian_rho(len(Gs), nmax, seed=5)
+    ref = -np.einsum("gnm,gnmrt->grt", rho, X_full, optimize=True)
+
+    fock = get_fockmatrix_constructor(
+        Gs,
+        thetas,
+        nmax,
+        method="laguerre",
+        potential="constant",
+        kappa=kappa,
+        nquad=300,
+    )
+    out = fock(rho)
+
+    assert np.allclose(out, ref, rtol=1e-10, atol=1e-12)

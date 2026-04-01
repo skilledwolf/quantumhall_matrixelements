@@ -8,12 +8,25 @@ import numpy as np
 from numpy.typing import NDArray
 
 from .exchange_hankel import get_exchange_kernels_hankel
-from .exchange_laguerre import get_exchange_kernels_laguerre
+from .exchange_laguerre import (
+    QuadratureParams,
+    build_exchange_fock_precompute,
+    get_exchange_kernels_laguerre,
+)
 from .exchange_ogata import get_exchange_kernels_Ogata
 
 ComplexArray = NDArray[np.complex128]
 RealArray = NDArray[np.float64]
 Quad = tuple[int, int, int, int]
+_FAST_LAGUERRE_PASSTHROUGH_KEYS = {
+    "adaptive_nquad",
+    "canonical_select_max_entries",
+    "kappa",
+    "nquad",
+    "potential",
+    "qmax",
+    "sign_magneticfield",
+}
 
 
 def _build_compressed_constructor(
@@ -172,6 +185,71 @@ def build_fockmatrix_apply(
     raise ValueError("convention must be 'standard' or 'hf'")
 
 
+def _maybe_build_fast_laguerre_constructor(
+    G_magnitudes: RealArray,
+    G_angles: RealArray,
+    nmax: int,
+    *,
+    select: Iterable[Quad] | None,
+    kwargs: dict[str, Any],
+) -> Callable[[ComplexArray, bool], ComplexArray] | None:
+    """Use the dedicated Laguerre Fock path when the request maps exactly onto it."""
+    if select is not None:
+        return None
+    if any(key not in _FAST_LAGUERRE_PASSTHROUGH_KEYS for key in kwargs):
+        return None
+
+    adaptive_nquad = bool(kwargs.get("adaptive_nquad", True))
+    qmax = float(kwargs.get("qmax", 35.0))
+    nquad = int(kwargs.get("nquad", 800))
+
+    G_magnitudes_arr = cast(RealArray, np.asarray(G_magnitudes, dtype=np.float64).ravel())
+    G_angles_arr = cast(RealArray, np.asarray(G_angles, dtype=np.float64).ravel())
+    if G_magnitudes_arr.shape != G_angles_arr.shape:
+        raise ValueError("G_magnitudes and G_angles must have the same shape.")
+
+    if adaptive_nquad and G_magnitudes_arr.size > 0:
+        G_max = float(np.max(np.abs(G_magnitudes_arr)))
+        nquad_bessel = int(np.ceil(8.0 * G_max * qmax / (2.0 * np.pi)))
+        nquad = max(nquad, nquad_bessel)
+
+    sign_magneticfield = int(kwargs.get("sign_magneticfield", -1))
+    if sign_magneticfield not in (1, -1):
+        raise ValueError("sign_magneticfield must be 1 or -1")
+
+    kappa = float(kwargs.get("kappa", 1.0))
+    potential = kwargs.get("potential", "coulomb")
+    fast_potential: Callable[[RealArray], RealArray] | None
+    if potential == "coulomb":
+        fast_potential = None
+    elif potential == "constant":
+        def _constant_potential(q: RealArray, value: float = kappa) -> RealArray:
+            return cast(RealArray, np.full_like(q, value, dtype=np.float64))
+
+        fast_potential = _constant_potential
+    elif callable(potential):
+        fast_potential = potential
+    else:
+        return None
+
+    precompute = build_exchange_fock_precompute(
+        nmax,
+        G_magnitudes_arr,
+        G_angles_arr,
+        QuadratureParams(qmax=qmax, N=nquad),
+        sigma=float(sign_magneticfield),
+        kappa=kappa,
+        potential=fast_potential,
+        include_minus=False,
+    )
+
+    def apply(rho: ComplexArray, include_minus: bool = True) -> ComplexArray:
+        out = precompute.exchange_fock(rho)
+        return -out if include_minus else out
+
+    return apply
+
+
 def get_fockmatrix_constructor(
     G_magnitudes: RealArray,
     G_angles: RealArray,
@@ -217,6 +295,15 @@ def get_fockmatrix_constructor(
     elif chosen in {"ogata", "og"}:
         backend = get_exchange_kernels_Ogata
     elif chosen in {"laguerre", "lag"}:
+        fast = _maybe_build_fast_laguerre_constructor(
+            G_magnitudes,
+            G_angles,
+            nmax,
+            select=select,
+            kwargs=dict(kwargs),
+        )
+        if fast is not None:
+            return fast
         backend = get_exchange_kernels_laguerre
     else:
         raise ValueError(
