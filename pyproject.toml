@@ -51,9 +51,9 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/wolft/quantumhall_matrixelements"
-Issues = "https://github.com/wolft/quantumhall_matrixelements/issues"
-Documentation = "https://wolft.github.io/quantumhall_matrixelements/"
+Homepage = "https://github.com/skilledwolf/quantumhall_matrixelements"
+Issues = "https://github.com/skilledwolf/quantumhall_matrixelements/issues"
+Documentation = "http://tobiaswolf.net/quantumhall_matrixelements/"
 
 [tool.setuptools_scm]
 version_scheme = "guess-next-dev"

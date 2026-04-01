@@ -1,5 +1,6 @@
 # quantumhall-matrixelements: Quantum Hall Landau-Level Matrix Elements
 
+[![Docs](https://img.shields.io/badge/docs-published-0A66C2)](http://tobiaswolf.net/quantumhall_matrixelements/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17807688.svg)](https://doi.org/10.5281/zenodo.17807688)
 
 Landau-level plane-wave form factors, exchange kernels, and symmetric-gauge helper
@@ -11,6 +12,8 @@ Hartree-Fock, impurity, and pseudopotential calculations). It provides:
 - Symmetric-gauge guiding-center and factorized density form factors.
 - Central one-body matrix elements, plane Haldane pseudopotentials, and LLL disk two-body reconstruction helpers.
 - Symmetry diagnostics for verifying kernel implementations. 
+
+Documentation: [tobiaswolf.net/quantumhall_matrixelements](http://tobiaswolf.net/quantumhall_matrixelements/)
 
 ### Plane-Wave Landau-level Form Factors 
 For $\sigma = \mathrm{sgn}(qB_z)$, where $q$ is the charge of the carrier and $B_z$ is the magnetic field direction,

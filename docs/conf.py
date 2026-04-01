@@ -64,7 +64,7 @@ html_title = "quantumhall-matrixelements"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 html_theme_options = {
-    "source_repository": "https://github.com/wolft/quantumhall_matrixelements/",
+    "source_repository": "https://github.com/skilledwolf/quantumhall_matrixelements/",
     "source_branch": "main",
     "source_directory": "docs/",
 }
