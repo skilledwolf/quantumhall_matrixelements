@@ -51,12 +51,13 @@ def get_exchange_kernels_hankel(
     hankel_q_cut: float | None = 7.5,
     hankel_trunc_kmin: float = 2.0,
 ) -> tuple[ComplexArray, list[tuple[int, int, int, int]]]:
-    """Compute X_{n1,m1,n2,m2}(G) via vectorized Hankel quadrature.
+    r"""Compute X_{n1,m1,n2,m2}(G) via vectorized Hankel quadrature.
 
     Parameters
     ----------
     G_magnitudes, G_angles :
-        Arrays describing |G| and polar angle θ_G (same shape, no broadcasting).
+        Arrays describing ``|G|`` and polar angle :math:`\theta_G` (same shape,
+        no broadcasting).
     nmax :
         Number of Landau levels.
     potential :

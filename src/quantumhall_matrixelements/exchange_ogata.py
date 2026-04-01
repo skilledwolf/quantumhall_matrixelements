@@ -2,8 +2,8 @@
 
 This module provides a high-performance drop-in alternative to the mapped
 Gauss–Legendre implementation by using Ogata's quadrature for Hankel-type
-integrals (as popularized by the `hankel` package), while retaining a mapped
-Gauss–Legendre fallback for the small-|G| regime where Ogata can be inaccurate
+integrals (as popularized by the ``hankel`` package), while retaining a mapped
+Gauss–Legendre fallback for the small-``|G|`` regime where Ogata can be inaccurate
 (the x=k r change of variables concentrates support near x≈0).
 
 The public entry point is :func:`get_exchange_kernels_Ogata`.
@@ -128,10 +128,11 @@ def get_exchange_kernels_Ogata(
     ogata_auto_max_refine: int = 1,
     ogata_auto_fallback: str = "gausslegendre",
 ) -> tuple[ComplexArray, list[tuple[int, int, int, int]]]:
-    """Compute exchange kernels using Ogata quadrature (Hankel/Ogata) with fallback.
+    r"""Compute exchange kernels using Ogata quadrature (Hankel/Ogata) with fallback.
 
     This function is a drop-in alternative to the mapped Gauss–Legendre method.
-    For moderately large k = |G|ℓ it evaluates the oscillatory Bessel integrals
+    For moderately large :math:`k = |G| \ell_B` it evaluates the oscillatory
+    Bessel integrals
     using Ogata quadrature (exponentially convergent for Hankel transforms).
     For small k (including k=0), it automatically falls back to the original
     mapped Gauss–Legendre quadrature, where the integrand is non-oscillatory
@@ -148,7 +149,8 @@ def get_exchange_kernels_Ogata(
     ogata_N : int or None
         Number of Ogata nodes. If None, uses int(pi/ogata_h).
     kmin_ogata : float
-        Threshold on k=|G|ℓ below which we switch to the fallback quadrature.
+        Threshold on :math:`k = |G| \ell_B` below which we switch to the fallback
+        quadrature.
         Default 2.0. If you know your regime, you can reduce it to use Ogata
         more aggressively.
     chunk_size : int
@@ -158,17 +160,18 @@ def get_exchange_kernels_Ogata(
         ``(nG, n_select)`` in the input order. This avoids allocating the full
         ``(nG, nmax, nmax, nmax, nmax)`` tensor.
     ogata_auto : bool, optional
-        If True, attempt Ogata convergence by refining ``ogata_h`` (and ``ogata_N``)
-        and fall back for any |G| that does not converge within tolerances.
+        If True, attempt Ogata convergence by refining ``ogata_h`` (and
+        ``ogata_N``) and fall back for any ``|G|`` that does not converge within
+        tolerances.
     ogata_auto_rtol, ogata_auto_atol : float, optional
-        Relative/absolute tolerances for the per-|G| convergence check between
-        successive Ogata refinements.
+        Relative/absolute tolerances for the per-``|G|`` convergence check
+        between successive Ogata refinements.
     ogata_auto_refine : float, optional
         Refinement factor for Ogata step size ``h`` (h -> h / refine).
     ogata_auto_max_refine : int, optional
         Maximum number of refinements. Must be >= 1 if ogata_auto is enabled.
     ogata_auto_fallback : {"gausslegendre", "hankel"}, optional
-        Backend used for |G| values that fail Ogata convergence.
+        Backend used for ``|G|`` values that fail Ogata convergence.
 
     Returns
     -------

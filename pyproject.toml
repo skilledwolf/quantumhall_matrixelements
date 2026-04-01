@@ -41,10 +41,19 @@ dev = [
   "build",
   "twine"
 ]
+docs = [
+  "furo>=2024.8.6",
+  "matplotlib>=3.8",
+  "myst-parser>=3.0",
+  "sphinx>=8.0",
+  "sphinx-copybutton>=0.5",
+  "sphinx-gallery>=0.18"
+]
 
 [project.urls]
 Homepage = "https://github.com/wolft/quantumhall_matrixelements"
 Issues = "https://github.com/wolft/quantumhall_matrixelements/issues"
+Documentation = "https://wolft.github.io/quantumhall_matrixelements/"
 
 [tool.setuptools_scm]
 version_scheme = "guess-next-dev"

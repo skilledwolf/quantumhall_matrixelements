@@ -81,9 +81,9 @@ def get_exchange_kernels(
         Backend selector:
 
         - ``'laguerre'`` (default): Numba-JIT quadrature on [0, qmax] with
-          Laguerre three-term recurrence. Stable for all nmax and |G|.
-        - ``'ogata'``: Ogata quadrature (Hankel/Ogata) with an automatic small-|G|
-          fallback.
+          Laguerre three-term recurrence. Stable for all nmax and ``|G|``.
+        - ``'ogata'``: Ogata quadrature (Hankel/Ogata) with an automatic
+          small-``|G|`` fallback.
         - ``'hankel'``: Hankel-transform based implementation (slow but precise).
 
     materialize_limit_bytes :
