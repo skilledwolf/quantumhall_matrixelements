@@ -29,7 +29,7 @@ extensions = [
 ]
 
 templates_path = ["_templates"]
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "examples/README.md"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "examples/README.rst"]
 
 myst_enable_extensions = [
     "amsmath",
