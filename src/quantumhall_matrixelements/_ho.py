@@ -32,45 +32,41 @@ def precompute_radial_table(q_nodes: RealArray, logfact: RealArray) -> RealArray
     nq = q_nodes.size
     nmax = logfact.size - 1
     radial = np.empty((nq, nmax, nmax), dtype=np.float64)
-
-    laguerre = np.empty((nmax, nmax), dtype=np.float64)
-    pow_x = np.empty(nmax, dtype=np.float64)
+    radial.fill(0.0)
 
     for iq in range(nq):
         q = q_nodes[iq]
         x = 0.5 * q * q
 
+        logx = np.log(x) if x > 0.0 else 0.0
+
         for alpha in range(nmax):
-            laguerre[alpha, 0] = 1.0
-            if nmax > 1:
-                laguerre[alpha, 1] = 1.0 + alpha - x
-            for k in range(1, nmax - 1):
-                laguerre[alpha, k + 1] = (
-                    (2 * k + 1 + alpha - x) * laguerre[alpha, k]
-                    - (k + alpha) * laguerre[alpha, k - 1]
-                ) / (k + 1)
+            if x > 0.0:
+                # Start from the normalized k=0 amplitude so large factorial and
+                # power factors are combined before exponentiation.
+                r_prev = np.exp(0.5 * (alpha * logx - x - logfact[alpha]))
+            else:
+                r_prev = 1.0 if alpha == 0 else 0.0
 
-        if x > 0.0:
-            logx = np.log(x)
-            for alpha in range(nmax):
-                if alpha == 0:
-                    pow_x[alpha] = 1.0
-                else:
-                    pow_x[alpha] = np.exp(0.5 * alpha * logx)
-        else:
-            pow_x[0] = 1.0
-            for alpha in range(1, nmax):
-                pow_x[alpha] = 0.0
+            radial[iq, alpha, 0] = r_prev
+            radial[iq, 0, alpha] = r_prev
 
-        ex = np.exp(-0.5 * x)
-        for row in range(nmax):
-            for col in range(nmax):
-                alpha = row - col
-                if alpha < 0:
-                    alpha = -alpha
-                kmin = row if row < col else col
-                ratio = np.exp(0.5 * (logfact[kmin] - logfact[kmin + alpha]))
-                radial[iq, row, col] = ratio * pow_x[alpha] * laguerre[alpha, kmin] * ex
+            kmax = nmax - alpha
+            if kmax <= 1:
+                continue
+
+            r_curr = ((1.0 + alpha - x) / np.sqrt(1.0 + alpha)) * r_prev
+            radial[iq, alpha + 1, 1] = r_curr
+            radial[iq, 1, alpha + 1] = r_curr
+
+            for k in range(1, kmax - 1):
+                coeff1 = (2.0 * k + 1.0 + alpha - x) / np.sqrt((k + 1.0) * (k + 1.0 + alpha))
+                coeff2 = np.sqrt((k * (k + alpha)) / ((k + 1.0) * (k + 1.0 + alpha)))
+                r_next = coeff1 * r_curr - coeff2 * r_prev
+                radial[iq, k + 1 + alpha, k + 1] = r_next
+                radial[iq, k + 1, k + 1 + alpha] = r_next
+                r_prev = r_curr
+                r_curr = r_next
 
     return radial
 

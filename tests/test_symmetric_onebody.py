@@ -1,10 +1,14 @@
+import warnings
+
 import numpy as np
 import pytest
 
+import quantumhall_matrixelements.symmetric.onebody as symmetric_onebody
 from quantumhall_matrixelements import (
     get_central_onebody_matrix_elements_compressed,
     materialize_central_onebody_matrix,
 )
+from quantumhall_matrixelements._ho import logfact_table, precompute_radial_table
 
 
 def test_central_onebody_exact_selection_rule_and_lll_coulomb_value():
@@ -129,3 +133,45 @@ def test_central_onebody_invalid_inputs_fail_loudly():
 
     with pytest.raises(ValueError):
         materialize_central_onebody_matrix(np.array([1.0]), [], 2, 2)
+
+
+def test_large_index_radial_table_stays_finite():
+    radial = precompute_radial_table(np.array([10.0, 25.0, 35.0], dtype=float), logfact_table(450))
+    assert np.isfinite(radial).all()
+    assert np.nanmax(np.abs(radial)) < 1.0
+
+
+def test_central_onebody_blocked_path_matches_full_path(monkeypatch: pytest.MonkeyPatch):
+    kwargs = dict(
+        nmax=4,
+        mmax=5,
+        potential="coulomb",
+        qmax=25.0,
+        nquad=800,
+        select=[(0, 1, 0, 1), (1, 2, 0, 1), (2, 3, 1, 2), (3, 4, 1, 2)],
+    )
+    values_full, select_full = get_central_onebody_matrix_elements_compressed(**kwargs)
+
+    monkeypatch.setattr(symmetric_onebody, "_ONEBODY_BLOCK_TARGET_BYTES", 1)
+    values_blocked, select_blocked = get_central_onebody_matrix_elements_compressed(**kwargs)
+
+    assert select_blocked == select_full
+    assert np.allclose(values_blocked, values_full, rtol=1e-12, atol=1e-12)
+
+
+def test_central_onebody_large_cutoff_selected_entries_stay_finite_without_warnings():
+    select = [(0, 3, 0, 3), (1, 4, 0, 3), (2, 5, 1, 4), (40, 43, 39, 42)]
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        values, select_list = get_central_onebody_matrix_elements_compressed(
+            260,
+            263,
+            potential="coulomb",
+            qmax=35.0,
+            nquad=800,
+            select=select,
+        )
+
+    assert select_list == select
+    assert np.isfinite(values).all()

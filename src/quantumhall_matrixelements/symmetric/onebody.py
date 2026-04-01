@@ -12,6 +12,7 @@ from .._select import DEFAULT_CANONICAL_SELECT_MAX_ENTRIES
 
 RealArray = NDArray[np.float64]
 OneBodyQuad = tuple[int, int, int, int]
+_ONEBODY_BLOCK_TARGET_BYTES = 128 * 1024 * 1024
 
 
 def _coerce_select_entry(nmax: int, mmax: int, quad: Sequence[int]) -> OneBodyQuad:
@@ -77,6 +78,48 @@ def _normalize_select(
     return select_list
 
 
+def _prepare_pair_indices(
+    select_list: list[OneBodyQuad],
+) -> tuple[RealArray, NDArray[np.int64], NDArray[np.int64], NDArray[np.int64], NDArray[np.int64]]:
+    pair_to_idx: dict[tuple[int, int], int] = {}
+    pair_rows: list[int] = []
+    pair_cols: list[int] = []
+    n_pair_idx = np.zeros(len(select_list), dtype=np.int64)
+    m_pair_idx = np.zeros(len(select_list), dtype=np.int64)
+    signs = np.zeros(len(select_list), dtype=np.float64)
+
+    for idx, (n_row, m_row, n_col, m_col) in enumerate(select_list):
+        if (m_row - n_row) != (m_col - n_col):
+            continue
+        signs[idx] = -1.0 if (n_row - n_col) % 2 else 1.0
+
+        pair_n = (n_row, n_col)
+        pair_idx = pair_to_idx.get(pair_n)
+        if pair_idx is None:
+            pair_idx = len(pair_rows)
+            pair_to_idx[pair_n] = pair_idx
+            pair_rows.append(n_row)
+            pair_cols.append(n_col)
+        n_pair_idx[idx] = pair_idx
+
+        pair_m = (m_row, m_col)
+        pair_idx = pair_to_idx.get(pair_m)
+        if pair_idx is None:
+            pair_idx = len(pair_rows)
+            pair_to_idx[pair_m] = pair_idx
+            pair_rows.append(m_row)
+            pair_cols.append(m_col)
+        m_pair_idx[idx] = pair_idx
+
+    return (
+        signs,
+        n_pair_idx,
+        m_pair_idx,
+        np.asarray(pair_rows, dtype=np.int64),
+        np.asarray(pair_cols, dtype=np.int64),
+    )
+
+
 def get_central_onebody_matrix_elements_compressed(
     nmax: int,
     mmax: int,
@@ -111,17 +154,44 @@ def get_central_onebody_matrix_elements_compressed(
 
     max_index = max(nmax, mmax)
     logfact = logfact_table(max_index).astype(np.float64, copy=False)
-    radial = precompute_radial_table(q_nodes, logfact)
+    full_radial_bytes = q_nodes.size * max_index * max_index * np.dtype(np.float64).itemsize
+    if full_radial_bytes <= _ONEBODY_BLOCK_TARGET_BYTES:
+        radial = precompute_radial_table(q_nodes, logfact)
+
+        values = np.zeros(len(select_list), dtype=np.float64)
+        for idx, (n_row, m_row, n_col, m_col) in enumerate(select_list):
+            if (m_row - n_row) != (m_col - n_col):
+                continue
+            delta = n_row - n_col
+            sign = -1.0 if delta % 2 else 1.0
+            values[idx] = sign * np.dot(
+                w_eff,
+                radial[:, n_row, n_col] * radial[:, m_row, m_col],
+            )
+        return values, select_list
+
+    signs, n_pair_idx, m_pair_idx, pair_rows, pair_cols = _prepare_pair_indices(select_list)
+    if pair_rows.size == 0:
+        return np.zeros(len(select_list), dtype=np.float64), select_list
+
+    bytes_per_q = np.dtype(np.float64).itemsize * (
+        max_index * max_index + pair_rows.size + 3 * len(select_list)
+    )
+    q_block = max(1, min(q_nodes.size, int(_ONEBODY_BLOCK_TARGET_BYTES // max(bytes_per_q, 1))))
 
     values = np.zeros(len(select_list), dtype=np.float64)
-    for idx, (n_row, m_row, n_col, m_col) in enumerate(select_list):
-        if (m_row - n_row) != (m_col - n_col):
-            continue
-        delta = n_row - n_col
-        sign = -1.0 if delta % 2 else 1.0
-        values[idx] = sign * np.dot(
-            w_eff,
-            radial[:, n_row, n_col] * radial[:, m_row, m_col],
+    for start in range(0, q_nodes.size, q_block):
+        stop = min(start + q_block, q_nodes.size)
+        radial_block = precompute_radial_table(q_nodes[start:stop], logfact)
+        pair_block = radial_block[:, pair_rows, pair_cols]
+        lhs = pair_block[:, n_pair_idx]
+        rhs = pair_block[:, m_pair_idx]
+        values += signs * np.einsum(
+            "q,qj,qj->j",
+            w_eff[start:stop],
+            lhs,
+            rhs,
+            optimize=True,
         )
 
     return values, select_list
