@@ -472,11 +472,16 @@ def build_exchange_fock_precompute(
     G_thetas: RealArray,
     params: QuadratureParams,
     *,
-    sigma: float = +1.0,
+    sigma: float = -1.0,
     kappa: float = 1.0,
     potential: Callable[[RealArray], RealArray] | None = None,
     include_minus: bool = True,
 ) -> ExchangeFockPrecompute:
+    """Precompute the fast Laguerre Fock-application tables.
+
+    The default ``sigma=-1`` matches the package-wide
+    ``sign_magneticfield=-1`` convention used by the public APIs.
+    """
     G_mags = np.asarray(G_mags, dtype=np.float64)
     G_thetas = np.asarray(G_thetas, dtype=np.float64)
     if G_mags.ndim != 1 or G_thetas.ndim != 1 or G_mags.shape != G_thetas.shape:

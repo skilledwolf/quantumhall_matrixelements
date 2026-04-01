@@ -54,6 +54,19 @@ def test_fast_fock_include_minus_flag():
     assert np.allclose(Fm, -Fp)
 
 
+def test_fast_fock_default_sigma_matches_public_default():
+    nmax = 3
+    Gs = np.array([0.8, 1.7])
+    thetas = np.array([0.2, -0.4])
+    rho = _random_hermitian_rho(len(Gs), nmax, seed=7)
+
+    params = QuadratureParams(qmax=35.0, N=250)
+    fast_default = build_exchange_fock_precompute(nmax, Gs, thetas, params)
+    ref = get_fockmatrix_constructor(Gs, thetas, nmax, method="laguerre", nquad=params.N)
+
+    assert np.allclose(fast_default.exchange_fock(rho), ref(rho), rtol=1e-10, atol=1e-10)
+
+
 def test_laguerre_backend_values_match_fast_apply():
     nmax = 3
     Gs = np.array([0.0, 0.8, 1.7])
