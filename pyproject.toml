@@ -78,7 +78,10 @@ known-first-party = ["quantumhall_matrixelements"]
 minversion = "8.0"
 addopts = "-ra -q --cov=quantumhall_matrixelements --cov-report=term-missing"
 testpaths = ["tests"]
-markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
+markers = [
+  "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+  "release: marks release-tier validation tests and frozen-reference checks",
+]
 
 [tool.mypy]
 python_version = "3.11"

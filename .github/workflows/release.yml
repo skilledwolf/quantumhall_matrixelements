@@ -50,7 +50,15 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -q
+          pytest -q -m "not release"
+
+      - name: Run release-tier reference tests
+        run: |
+          pytest -q -m release
+
+      - name: Run frozen symmetric reference validation
+        run: |
+          PYTHONPATH=src python validation/validate_symmetric_reference.py
 
       # Only publish on tag refs like v0.1.0
       - name: Publish to PyPI via OIDC (Trusted Publisher)

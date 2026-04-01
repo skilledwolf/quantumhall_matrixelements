@@ -50,4 +50,4 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -q
+          pytest -q -m "not release"
