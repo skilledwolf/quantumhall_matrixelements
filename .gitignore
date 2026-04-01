@@ -60,6 +60,7 @@ coverage.xml
 
 # Local planning
 Roadmap.local.md
+tmp/
 
 # Documentation builds
 docs/_build/
