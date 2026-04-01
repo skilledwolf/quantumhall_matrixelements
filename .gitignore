@@ -57,3 +57,6 @@ coverage.xml
 
 # OS
 .DS_Store
+
+# Local planning
+Roadmap.local.md
