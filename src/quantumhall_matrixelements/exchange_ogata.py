@@ -429,6 +429,10 @@ def get_exchange_kernels_Ogata(
     if fb_idx.size > 0:
         from .exchange_legendre import get_exchange_kernels_GaussLegendre
 
+        # Request the σ = +1 (native, pre-flip) kernel from the Legendre fallback.
+        # The Ogata main loop also produces σ = +1 natively here; both are flipped
+        # together below when sign_magneticfield = -1. Passing sign_magneticfield=+1
+        # to Legendre skips its internal conj flip.
         fb_values, fb_select = get_exchange_kernels_GaussLegendre(
             np.asarray(G_magnitudes)[fb_idx],
             np.asarray(G_angles)[fb_idx],
@@ -438,7 +442,7 @@ def get_exchange_kernels_Ogata(
             nquad=nquad,
             scale=scale,
             nlag=nlag,
-            sign_magneticfield=-1,
+            sign_magneticfield=1,
             select=select,
             canonical_select_max_entries=canonical_select_max_entries,
         )
@@ -668,7 +672,11 @@ def get_exchange_kernels_Ogata(
     if fb_values is not None:
         Xs[fb_idx] = fb_values
 
-    if sign_magneticfield == 1:
+    # The main Ogata loop and the Legendre fallback (invoked with
+    # sign_magneticfield=+1, see below) both natively produce the σ = +1
+    # kernel. To return σ = sign_magneticfield we apply conj · (-1)^(a_tot)
+    # whenever σ flips, i.e. for sign_magneticfield = -1.
+    if sign_magneticfield == -1:
         phase1 = 1 - 2 * ((sel_n1 - sel_m1) & 1)
         phase2 = 1 - 2 * ((sel_n2 - sel_m2) & 1)
         Xs = Xs.conj() * (phase1 * phase2)[None, :]

@@ -43,6 +43,25 @@ where $V(q)$ is the interaction potential. For the Coulomb interaction,
 $V(q) = 2\pi e^2 / (\epsilon q)$. Units, $\kappa$ scaling, and the
 magnetic-field-sign convention are documented under Conventions.
 
+> [!IMPORTANT]
+> **Magnetic-field sign convention fix (1.2.0).**
+> Versions `<= 1.1.x` of this package silently computed exchange kernels
+> and the fast Fock-apply path with the **opposite** magnetic-field sign
+> convention from what the documentation and `sign_magneticfield` keyword
+> claimed. Concretely, `get_exchange_kernels(..., sign_magneticfield=X)`
+> used to return `X^{-X}` in the analytic sign convention of
+> `docs/conventions.md`. The internal symmetry
+> `X^\sigma[a,b,p,q] = X^{-\sigma}[p,q,a,b]` meant most scalar observables
+> (for example Fock energies for Hermitian densities at a single Landau
+> level) were unaffected, but multi-Landau-level Fock contractions and
+> anything sensitive to the literal kernel values produced wrong results
+> (observed ~1% in representative hex Wigner-crystal benchmarks).
+> **Starting in 1.2.0, all kernels match the documented analytic
+> convention exactly.** See [`CHANGELOG.md`](CHANGELOG.md) and
+> [`docs/conventions.md`](docs/conventions.md) for details; if you must
+> reproduce the older behavior, pin `quantumhall-matrixelements<1.2`
+> and contact the maintainers.
+
 ## Installation
 
 From PyPI:

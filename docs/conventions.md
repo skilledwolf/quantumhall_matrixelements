@@ -1,5 +1,17 @@
 # Conventions
 
+```{warning}
+**Historical convention bug (fixed in 1.2.0).**
+Versions `<= 1.1.x` silently inverted the magnetic-field sign in the
+exchange-kernel and fast Fock-apply backends: a user-supplied
+`sign_magneticfield = X` produced results corresponding to
+`sigma = -X` in the analytic formulas on this page. Starting with
+1.2.0 the numerics match the documented analytic convention
+exactly; `sign_magneticfield = X` now yields `sigma = X`. If you
+must reproduce pre-1.2.0 numbers, pin `quantumhall-matrixelements<1.2`.
+See `CHANGELOG.md` for details.
+```
+
 ## Magnetic-field sign
 
 The package uses

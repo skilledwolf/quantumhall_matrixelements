@@ -445,7 +445,10 @@ def get_exchange_kernels_hankel(
 
             Xs[z_idx] = X0
 
-    if sign_magneticfield == 1:
+    # The main loop natively produces the σ = +1 kernel (see phase_table
+    # construction above). To return σ = sign_magneticfield we apply
+    # conj · (-1)^(a_tot) whenever σ flips, i.e. for sign_magneticfield = -1.
+    if sign_magneticfield == -1:
         phase1 = 1 - 2 * ((sel_n1 - sel_m1) & 1)
         phase2 = 1 - 2 * ((sel_n2 - sel_m2) & 1)
         Xs = Xs.conj() * (phase1 * phase2)[None, :]
