@@ -263,6 +263,79 @@ def _exchange_fock_numba(
 
 
 @_typed_njit(parallel=True, fastmath=False)
+def _exchange_fock_hf_numba(
+    rho: ComplexArray,
+    R: RealArray,
+    w_eff: RealArray,
+    kernels: RealArray,
+    phase_in: ComplexArray,
+    phase_out: ComplexArray,
+    max_d: int,
+    max_order: int,
+) -> ComplexArray:
+    """Apply X with the ``quantumhall_hf`` exchange convention.
+
+    Implements
+
+        F[g, n, m] = sum_{r, t} X^sigma[g, m, r, n, t] * conj(rho[g, t, r])
+
+    using the same precompute tables as :func:`_exchange_fock_numba`. Unlike
+    the standard convention, the HF reduction has no d-collapse
+    factorization (the kernel ``ker((t-n)-(r-m))`` couples both the input
+    pair ``(m, r)`` and the output pair ``(n, t)`` non-trivially), so this
+    kernel costs ``O(nmax^4 * Nq)`` per ``G``. It still parallelizes over
+    ``G`` via ``prange`` and avoids any Python-level bookkeeping, beating
+    the compressed ``np.add.at`` path at moderate-to-large ``nmax``.
+
+    Identification with the kernel build:
+        n1 = m, m1 = r, n2 = n, m2 = t,
+        d_out = m1 - n1 = r - m,  d_in = m2 - n2 = t - n,  k = d_in - d_out,
+    phases applied as ``phase_in[d_in] * phase_out[d_out]`` and Bessel
+    order ``k`` via ``kernels[g, iq, k + max_order]``.
+    """
+    nG, nmax, _ = rho.shape
+    Nq = R.shape[0]
+    shift_d = max_d
+    shift_k = max_order
+
+    F = np.zeros((nG, nmax, nmax), dtype=np.complex128)
+
+    for g in prange(nG):
+        # Pre-conjugate rho once per G so the inner loop reads a flat array.
+        rho_c = np.empty((nmax, nmax), dtype=np.complex128)
+        for tt in range(nmax):
+            for rr in range(nmax):
+                rho_c[tt, rr] = rho[g, tt, rr].conjugate()
+
+        for iq in range(Nq):
+            Ri = R[iq]
+            ker = kernels[g, iq]
+            w = w_eff[iq]
+
+            for n in range(nmax):
+                for m in range(nmax):
+                    acc = 0.0 + 0.0j
+                    for r in range(nmax):
+                        d_out = r - m
+                        po = phase_out[g, d_out + shift_d]
+                        A_mr = Ri[m, r] * po
+                        for t in range(nmax):
+                            d_in = t - n
+                            pi = phase_in[g, d_in + shift_d]
+                            k_idx = d_in - d_out + shift_k
+                            acc += (
+                                A_mr
+                                * Ri[n, t]
+                                * pi
+                                * ker[k_idx]
+                                * rho_c[t, r]
+                            )
+                    F[g, n, m] += w * acc
+
+    return F
+
+
+@_typed_njit(parallel=True, fastmath=False)
 def _evaluate_exchange_kernels_laguerre_numba(
     R: RealArray,
     w_eff: RealArray,
@@ -466,6 +539,36 @@ class ExchangeFockPrecompute:
 
         rho_c = np.ascontiguousarray(rho)
         F = _exchange_fock_numba(
+            rho_c,
+            self.R,
+            self.w_eff,
+            self.kernels,
+            self.phase_in,
+            self.phase_out,
+            self.max_d,
+            self.max_order,
+        )
+
+        return -F if self.include_minus else F
+
+    def exchange_fock_hf(self, rho: ComplexArray) -> ComplexArray:
+        """Apply exchange in the ``quantumhall_hf`` convention:
+
+            F[g, n, m] = sum_{r, t} X^sigma[g, m, r, n, t] * conj(rho[g, t, r]).
+
+        Mirrors :meth:`exchange_fock` but uses the HF index pattern. Reuses
+        all precompute tables (no extra build cost). The ``include_minus``
+        flag set at construction time controls the leading sign exactly as
+        for :meth:`exchange_fock`.
+        """
+        rho = cast(ComplexArray, np.asarray(rho, dtype=np.complex128))
+        if rho.shape != (self.G_mags.size, self.nmax, self.nmax):
+            raise ValueError(
+                f"rho shape must be (nG,nmax,nmax)=({self.G_mags.size},{self.nmax},{self.nmax})"
+            )
+
+        rho_c = np.ascontiguousarray(rho)
+        F = _exchange_fock_hf_numba(
             rho_c,
             self.R,
             self.w_eff,

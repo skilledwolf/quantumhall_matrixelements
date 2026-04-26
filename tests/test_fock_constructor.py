@@ -101,6 +101,51 @@ def test_fock_constructor_laguerre_workspace_guard_uses_fast_path():
         )
 
 
+def test_fock_constructor_hf_fast_path_matches_compressed_apply():
+    """The Numba HF fast path must agree with the compressed ``np.add.at`` path
+    that ships in :func:`_build_compressed_constructor_hf` for both
+    ``sign_magneticfield`` choices and across small ``nmax``.
+
+    This is the golden-reference test for the 1.3.0 fast HF Fock-apply
+    addition: a regression here means the fast path's index pattern,
+    phase-table lookup, or sign convention has drifted from the
+    documented analytic formula.
+    """
+    from quantumhall_matrixelements.fock import _build_compressed_constructor_hf
+    from quantumhall_matrixelements import get_exchange_kernels_compressed
+
+    rng = np.random.default_rng(123)
+    for nmax in (1, 2, 3, 4):
+        for sigma in (-1, 1):
+            Gs = np.array([0.0, 0.7, 1.2, 2.5])
+            thetas = np.array([0.0, -0.6, 0.4, 1.1])
+            rho = (
+                rng.normal(size=(len(Gs), nmax, nmax))
+                + 1j * rng.normal(size=(len(Gs), nmax, nmax))
+            ).astype(np.complex128)
+
+            # Slow-but-correct compressed path (current qhf path)
+            values, select = get_exchange_kernels_compressed(
+                Gs, thetas, nmax, method="laguerre", nquad=300,
+                sign_magneticfield=sigma,
+            )
+            slow = _build_compressed_constructor_hf(values, select, nmax)
+            ref = slow(rho)
+
+            # Fast Numba HF path (returned by get_fockmatrix_constructor_hf)
+            fast = get_fockmatrix_constructor_hf(
+                Gs, thetas, nmax, method="laguerre", nquad=300,
+                sign_magneticfield=sigma,
+            )
+            out = fast(rho)
+
+            assert np.allclose(out, ref, rtol=1e-10, atol=1e-12), (
+                f"fast HF path disagrees with compressed apply at "
+                f"nmax={nmax}, sigma={sigma}: max diff "
+                f"{np.max(np.abs(out - ref)):.3e}"
+            )
+
+
 def test_fock_constructor_laguerre_accepts_compressed_limit_on_fast_path():
     Gs = np.array([0.0, 1.2])
     thetas = np.array([0.0, 0.3])

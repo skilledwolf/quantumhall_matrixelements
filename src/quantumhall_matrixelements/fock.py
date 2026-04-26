@@ -7,7 +7,13 @@ from typing import Any, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from ._materialize import DEFAULT_COMPRESSED_LIMIT_BYTES, guard_compressed_values_allocation
+from ._materialize import (
+    DEFAULT_COMPRESSED_LIMIT_BYTES,
+    DEFAULT_FULL_TENSOR_LIMIT_BYTES,
+    format_bytes,
+    guard_compressed_values_allocation,
+    materialize_full_tensor,
+)
 from ._select import estimate_canonical_select_size
 from .exchange_hankel import get_exchange_kernels_hankel
 from .exchange_laguerre import (
@@ -227,30 +233,102 @@ def _maybe_build_fast_laguerre_constructor(
     *,
     select: Iterable[Quad] | None,
     kwargs: dict[str, Any],
+    convention: str = "standard",
 ) -> Callable[[ComplexArray, bool], ComplexArray] | None:
-    """Use the dedicated Laguerre Fock path when the request maps exactly onto it."""
+    """Use the dedicated Laguerre Fock path when the request maps exactly onto it.
+
+    The ``convention`` argument selects between the two index orderings:
+
+    - ``"standard"``: ``F[g, n2, m2] = sum_{n1, m1} X[g, n1, m1, n2, m2] * rho[g, n1, m1]``,
+      via the d-collapse Numba kernel (cost O(nmax^2 * Nq) per G).
+      Implemented through :class:`ExchangeFockPrecompute`.
+
+    - ``"hf"``: ``F[g, n, m] = sum_{r, t} X[g, m, r, n, t] * conj(rho[g, t, r])``,
+      the convention used by :mod:`quantumhall_hf`. The HF reduction has
+      no d-collapse factorization (the kernel ``ker((t-n)-(r-m))`` couples
+      both pairs non-trivially), so the standard precompute approach
+      doesn't help. Instead we materialize the full kernel tensor once
+      (cost O(nG * nmax^4 * Nq), storage O(nG * nmax^4)) and apply via
+      BLAS-backed ``np.einsum`` (cost O(nG * nmax^4) per call). This is
+      3-12× faster than the compressed ``np.add.at`` path at nmax >= 3
+      and roughly tied at nmax = 1, 2. If the full tensor would exceed
+      memory limits the function returns ``None`` so the caller falls
+      back to the compressed apply.
+    """
     if select is not None:
         return None
     if any(key not in _FAST_LAGUERRE_PASSTHROUGH_KEYS for key in kwargs):
         return None
 
-    adaptive_nquad = bool(kwargs.get("adaptive_nquad", True))
-    qmax = float(kwargs.get("qmax", 35.0))
-    nquad = int(kwargs.get("nquad", 800))
+    chosen_convention = str(convention).strip().lower()
+    if chosen_convention not in {"standard", "std", "hf", "quantumhall_hf"}:
+        return None
 
     G_magnitudes_arr = cast(RealArray, np.asarray(G_magnitudes, dtype=np.float64).ravel())
     G_angles_arr = cast(RealArray, np.asarray(G_angles, dtype=np.float64).ravel())
     if G_magnitudes_arr.shape != G_angles_arr.shape:
         raise ValueError("G_magnitudes and G_angles must have the same shape.")
 
+    sign_magneticfield = int(kwargs.get("sign_magneticfield", -1))
+    if sign_magneticfield not in (1, -1):
+        raise ValueError("sign_magneticfield must be 1 or -1")
+
+    if chosen_convention in {"hf", "quantumhall_hf"}:
+        # HF fast path: materialize + einsum (see docstring).
+        from . import (
+            get_exchange_kernels_compressed,  # noqa: PLC0415
+        )
+
+        materialize_kwargs: dict[str, Any] = dict(kwargs)
+        try:
+            values, select_list = get_exchange_kernels_compressed(
+                G_magnitudes_arr,
+                G_angles_arr,
+                int(nmax),
+                method="laguerre",
+                **materialize_kwargs,
+            )
+        except (MemoryError, ValueError):
+            return None
+        try:
+            X_full = materialize_full_tensor(values, select_list, int(nmax))
+        except MemoryError:
+            return None
+
+        # Precompute the einsum contraction path so np.einsum doesn't pay
+        # path-resolution overhead on every call.
+        nG = int(G_magnitudes_arr.size)
+        rho_dummy = np.empty((nG, int(nmax), int(nmax)), dtype=np.complex128)
+        einsum_path = np.einsum_path(
+            "gmrnt,gtr->gnm", X_full, rho_dummy, optimize="greedy"
+        )[0]
+
+        def apply_hf(rho: ComplexArray, include_minus: bool = True) -> ComplexArray:
+            rho_arr = cast(ComplexArray, np.asarray(rho, dtype=np.complex128))
+            if rho_arr.ndim != 3 or rho_arr.shape[1:] != (int(nmax), int(nmax)):
+                raise ValueError(
+                    f"rho must have shape (nG, {int(nmax)}, {int(nmax)})"
+                )
+            if rho_arr.shape[0] != X_full.shape[0]:
+                raise ValueError(
+                    f"rho first dimension must match nG={X_full.shape[0]}"
+                )
+            out = np.einsum(
+                "gmrnt,gtr->gnm", X_full, rho_arr.conj(), optimize=einsum_path
+            )
+            return cast(ComplexArray, -out if include_minus else out)
+
+        return apply_hf
+
+    # Standard convention: precompute tables for the d-collapse Numba apply.
+    adaptive_nquad = bool(kwargs.get("adaptive_nquad", True))
+    qmax = float(kwargs.get("qmax", 35.0))
+    nquad = int(kwargs.get("nquad", 800))
+
     if adaptive_nquad and G_magnitudes_arr.size > 0:
         G_max = float(np.max(np.abs(G_magnitudes_arr)))
         nquad_bessel = int(np.ceil(8.0 * G_max * qmax / (2.0 * np.pi)))
         nquad = max(nquad, nquad_bessel)
-
-    sign_magneticfield = int(kwargs.get("sign_magneticfield", -1))
-    if sign_magneticfield not in (1, -1):
-        raise ValueError("sign_magneticfield must be 1 or -1")
 
     kappa = float(kwargs.get("kappa", 1.0))
     potential = kwargs.get("potential", "coulomb")
@@ -394,6 +472,13 @@ def get_fockmatrix_constructor_hf(
     applies kernels in the ``quantumhall_hf`` exchange convention:
 
         Σ^F_{n m}(G) = - Σ_{r,t} X_{m r n t}(G) ρ^*_{t r}(G).
+
+    For ``method='laguerre'`` (the default) with no explicit ``select=``, this
+    routes through the Numba HF apply (:func:`_exchange_fock_hf_numba`), which
+    parallelizes over ``G`` and avoids materializing the compressed
+    ``(values, select)`` representation. The fallback path materializes the
+    compressed kernel and applies it via vectorized ``np.add.at`` and is the
+    fastest option for very small ``nmax``.
     """
     chosen = (method or "laguerre").strip().lower()
     backend_kwargs = dict(kwargs)
@@ -406,6 +491,16 @@ def get_fockmatrix_constructor_hf(
     elif chosen in {"ogata", "og"}:
         backend = get_exchange_kernels_Ogata
     elif chosen in {"laguerre", "lag"}:
+        fast = _maybe_build_fast_laguerre_constructor(
+            G_magnitudes,
+            G_angles,
+            nmax,
+            select=select,
+            kwargs=dict(kwargs),
+            convention="hf",
+        )
+        if fast is not None:
+            return fast
         backend = get_exchange_kernels_laguerre
     else:
         raise ValueError(
