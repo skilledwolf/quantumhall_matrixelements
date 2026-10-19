@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import itertools
+
 import mpmath as mp
 import numpy as np
 import pytest
@@ -238,13 +240,8 @@ def test_public_exchange_kernels_match_analytic(method, sign_magneticfield):
     G_mags = np.array([0.0, 0.7, 1.8, 3.5, 8.0, 15.0], dtype=np.float64)
     G_thetas = rng.uniform(0.0, 2.0 * np.pi, size=G_mags.size).astype(np.float64)
 
-    # Enumerate all symmetry-canonical (n1, m1, n2, m2); this is small at nmax=4.
-    select_list = []
-    for n1 in range(nmax):
-        for m1 in range(nmax):
-            for n2 in range(nmax):
-                for m2 in range(nmax):
-                    select_list.append((n1, m1, n2, m2))
+    # Enumerate every (n1, m1, n2, m2); this is small at nmax=4.
+    select_list = list(itertools.product(range(nmax), repeat=4))
 
     values, returned_select = get_exchange_kernels_compressed(
         G_mags,

@@ -111,8 +111,8 @@ def test_fock_constructor_hf_fast_path_matches_compressed_apply():
     phase-table lookup, or sign convention has drifted from the
     documented analytic formula.
     """
-    from quantumhall_matrixelements.fock import _build_compressed_constructor_hf
     from quantumhall_matrixelements import get_exchange_kernels_compressed
+    from quantumhall_matrixelements.fock import _build_compressed_constructor_hf
 
     rng = np.random.default_rng(123)
     for nmax in (1, 2, 3, 4):

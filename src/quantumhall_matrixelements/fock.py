@@ -9,8 +9,6 @@ from numpy.typing import NDArray
 
 from ._materialize import (
     DEFAULT_COMPRESSED_LIMIT_BYTES,
-    DEFAULT_FULL_TENSOR_LIMIT_BYTES,
-    format_bytes,
     guard_compressed_values_allocation,
     materialize_full_tensor,
 )
