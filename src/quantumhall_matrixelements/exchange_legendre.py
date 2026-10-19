@@ -328,7 +328,10 @@ def get_exchange_kernels_GaussLegendre(
 
     vals = _evaluate_legendre(pre, select_list)
 
-    if sign_magneticfield == 1:
+    # `_evaluate_legendre` natively produces the σ = +1 kernel (see the phase
+    # construction in `_build_legendre_precompute`). To return σ = sign_magneticfield
+    # we apply conj · (-1)^(a_tot) whenever σ flips, i.e. for sign_magneticfield = -1.
+    if sign_magneticfield == -1:
         phase1 = 1 - 2 * ((sel_n1 - sel_m1) & 1)
         phase2 = 1 - 2 * ((sel_n2 - sel_m2) & 1)
         vals = np.conj(vals) * (phase1 * phase2)[None, :]

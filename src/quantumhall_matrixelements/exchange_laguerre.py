@@ -205,6 +205,20 @@ def _exchange_fock_numba(
     max_d: int,
     max_order: int,
 ) -> ComplexArray:
+    """Apply X as a linear map (n1, m1) -> (n2, m2) on rho.
+
+    Implements
+        F[g, n2, m2] = sum_{n1, m1} X^sigma[g, n1, m1, n2, m2] * rho[g, n1, m1]
+
+    with the analytic-formula convention
+        d_out = m1 - n1,  d_in  = m2 - n2,  k = d_in - d_out,
+    phases applied as ``phase_in[d_in] * phase_out[d_out]`` and Bessel order
+    ``k`` via ``kernels[g, iq, k + max_order]``. This matches the index
+    convention used by :func:`_evaluate_exchange_kernels_laguerre_numba` and
+    :func:`_build_compressed_constructor`, i.e. the first index pair of the
+    kernel (``n1, m1``) is the input pair and the second pair (``n2, m2``)
+    is the output pair.
+    """
     nG, nmax, _ = rho.shape
     Nq = R.shape[0]
     D = 2 * max_d + 1
@@ -222,24 +236,101 @@ def _exchange_fock_numba(
                 svec[idx] = 0.0 + 0.0j
 
             Ri = R[iq]
-            for n2 in range(nmax):
-                for m2 in range(nmax):
-                    svec[m2 - n2 + shift] += rho[g, n2, m2] * Ri[n2, m2]
-
-            for idx in range(D):
-                uvec[idx] = svec[idx] * phase_in[g, idx]
-
-            ker = kernels[g, iq]
-            for out_idx in range(D):
-                acc = 0.0 + 0.0j
-                for in_idx in range(D):
-                    acc += uvec[in_idx] * ker[in_idx - out_idx + max_order]
-                vvec[out_idx] = acc * phase_out[g, out_idx]
-
-            w = w_eff[iq]
+            # svec[d_out] = sum_{n1, m1 : m1 - n1 == d_out} rho[n1, m1] * R[n1, m1]
             for n1 in range(nmax):
                 for m1 in range(nmax):
-                    F[g, n1, m1] += (w * Ri[m1, n1]) * vvec[m1 - n1 + shift]
+                    svec[m1 - n1 + shift] += rho[g, n1, m1] * Ri[n1, m1]
+
+            # Apply phase_out at d_out to build uvec[d_out].
+            for idx in range(D):
+                uvec[idx] = svec[idx] * phase_out[g, idx]
+
+            # Convolve with Bessel kernel ker[d_in - d_out], then apply phase_in at d_in.
+            ker = kernels[g, iq]
+            for d_in_idx in range(D):
+                acc = 0.0 + 0.0j
+                for d_out_idx in range(D):
+                    acc += uvec[d_out_idx] * ker[d_in_idx - d_out_idx + max_order]
+                vvec[d_in_idx] = acc * phase_in[g, d_in_idx]
+
+            # Accumulate into F[n2, m2] at d_in = m2 - n2.
+            w = w_eff[iq]
+            for n2 in range(nmax):
+                for m2 in range(nmax):
+                    F[g, n2, m2] += (w * Ri[n2, m2]) * vvec[m2 - n2 + shift]
+
+    return F
+
+
+@_typed_njit(parallel=True, fastmath=False)
+def _exchange_fock_hf_numba(
+    rho: ComplexArray,
+    R: RealArray,
+    w_eff: RealArray,
+    kernels: RealArray,
+    phase_in: ComplexArray,
+    phase_out: ComplexArray,
+    max_d: int,
+    max_order: int,
+) -> ComplexArray:
+    """Apply X with the ``quantumhall_hf`` exchange convention.
+
+    Implements
+
+        F[g, n, m] = sum_{r, t} X^sigma[g, m, r, n, t] * conj(rho[g, t, r])
+
+    using the same precompute tables as :func:`_exchange_fock_numba`. Unlike
+    the standard convention, the HF reduction has no d-collapse
+    factorization (the kernel ``ker((t-n)-(r-m))`` couples both the input
+    pair ``(m, r)`` and the output pair ``(n, t)`` non-trivially), so this
+    kernel costs ``O(nmax^4 * Nq)`` per ``G``. It still parallelizes over
+    ``G`` via ``prange`` and avoids any Python-level bookkeeping, beating
+    the compressed ``np.add.at`` path at moderate-to-large ``nmax``.
+
+    Identification with the kernel build:
+        n1 = m, m1 = r, n2 = n, m2 = t,
+        d_out = m1 - n1 = r - m,  d_in = m2 - n2 = t - n,  k = d_in - d_out,
+    phases applied as ``phase_in[d_in] * phase_out[d_out]`` and Bessel
+    order ``k`` via ``kernels[g, iq, k + max_order]``.
+    """
+    nG, nmax, _ = rho.shape
+    Nq = R.shape[0]
+    shift_d = max_d
+    shift_k = max_order
+
+    F = np.zeros((nG, nmax, nmax), dtype=np.complex128)
+
+    for g in prange(nG):
+        # Pre-conjugate rho once per G so the inner loop reads a flat array.
+        rho_c = np.empty((nmax, nmax), dtype=np.complex128)
+        for tt in range(nmax):
+            for rr in range(nmax):
+                rho_c[tt, rr] = rho[g, tt, rr].conjugate()
+
+        for iq in range(Nq):
+            Ri = R[iq]
+            ker = kernels[g, iq]
+            w = w_eff[iq]
+
+            for n in range(nmax):
+                for m in range(nmax):
+                    acc = 0.0 + 0.0j
+                    for r in range(nmax):
+                        d_out = r - m
+                        po = phase_out[g, d_out + shift_d]
+                        A_mr = Ri[m, r] * po
+                        for t in range(nmax):
+                            d_in = t - n
+                            pi = phase_in[g, d_in + shift_d]
+                            k_idx = d_in - d_out + shift_k
+                            acc += (
+                                A_mr
+                                * Ri[n, t]
+                                * pi
+                                * ker[k_idx]
+                                * rho_c[t, r]
+                            )
+                    F[g, n, m] += w * acc
 
     return F
 
@@ -275,11 +366,16 @@ def _evaluate_exchange_kernels_laguerre_numba(
             n2 = sel_n2[j]
             m2 = sel_m2[j]
 
-            din = m1 - n1
-            dout = m2 - n2
-            k = din - dout
+            # Analytic-formula convention: d_out = m1 - n1, d_in = m2 - n2.
+            # phase_in (= conj(phase_out)) is applied at the d_in index, and
+            # phase_out at the d_out index; together they give
+            #   i^a_tot · (-1)^d_in · exp(i σ (d_out - d_in) θ_G)
+            # which matches _AnalyticCoulombReference.X_element at σ.
+            d_out = m1 - n1
+            d_in = m2 - n2
+            k = d_in - d_out
 
-            phase = phase_in[g, din + shift_d] * phase_out[g, dout + shift_d]
+            phase = phase_in[g, d_in + shift_d] * phase_out[g, d_out + shift_d]
             ker_idx = k + shift_k
 
             acc = 0.0
@@ -398,14 +494,15 @@ def _ogata_q_evaluate_numba(
 
         # Apply phases and sign correction for negative Bessel order.
         # Ogata nodes are for J_{|k|}, but when k < 0: J_k = (-1)^|k| J_{|k|}.
+        # Analytic-formula convention: d_out = m1 - n1, d_in = m2 - n2.
         for j in range(nQ):
-            din = sel_m1[j] - sel_n1[j]
-            dout = sel_m2[j] - sel_n2[j]
-            k_bessel = din - dout
+            d_out = sel_m1[j] - sel_n1[j]
+            d_in = sel_m2[j] - sel_n2[j]
+            k_bessel = d_in - d_out
             sign_corr = 1.0
             if k_bessel < 0 and (-k_bessel) % 2 == 1:
                 sign_corr = -1.0
-            phase = phase_in[g, din + shift_d] * phase_out[g, dout + shift_d]
+            phase = phase_in[g, d_in + shift_d] * phase_out[g, d_out + shift_d]
             out[g, j] = sign_corr * radial[j] * phase
 
     return out
@@ -442,6 +539,36 @@ class ExchangeFockPrecompute:
 
         rho_c = np.ascontiguousarray(rho)
         F = _exchange_fock_numba(
+            rho_c,
+            self.R,
+            self.w_eff,
+            self.kernels,
+            self.phase_in,
+            self.phase_out,
+            self.max_d,
+            self.max_order,
+        )
+
+        return -F if self.include_minus else F
+
+    def exchange_fock_hf(self, rho: ComplexArray) -> ComplexArray:
+        """Apply exchange in the ``quantumhall_hf`` convention:
+
+            F[g, n, m] = sum_{r, t} X^sigma[g, m, r, n, t] * conj(rho[g, t, r]).
+
+        Mirrors :meth:`exchange_fock` but uses the HF index pattern. Reuses
+        all precompute tables (no extra build cost). The ``include_minus``
+        flag set at construction time controls the leading sign exactly as
+        for :meth:`exchange_fock`.
+        """
+        rho = cast(ComplexArray, np.asarray(rho, dtype=np.complex128))
+        if rho.shape != (self.G_mags.size, self.nmax, self.nmax):
+            raise ValueError(
+                f"rho shape must be (nG,nmax,nmax)=({self.G_mags.size},{self.nmax},{self.nmax})"
+            )
+
+        rho_c = np.ascontiguousarray(rho)
+        F = _exchange_fock_hf_numba(
             rho_c,
             self.R,
             self.w_eff,

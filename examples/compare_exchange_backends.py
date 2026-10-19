@@ -1,12 +1,15 @@
-"""Compare exchange-kernel backends: accuracy and timing.
+"""
+Compare exchange-kernel backends: accuracy and timing
+=====================================================
 
 This script computes exchange kernels with all three public backends
 (laguerre, ogata, hankel) and plots:
-  1. Relative error of each backend vs the Hankel reference.
-  2. Wall-clock timing comparison at large nmax.
+
+1. Relative error of each backend vs the Hankel reference.
+2. Wall-clock timing comparison at large nmax.
 
 It demonstrates laguerre's numerical stability at large nmax
-and the Ogata-in-q-space path for large |G|.
+and the Ogata-in-q-space path for large ``|G|``.
 """
 from __future__ import annotations
 

@@ -1,4 +1,6 @@
-"""Radial Landau-level form factors F_{n',n}(q) vs qℓ_B.
+"""
+Radial Landau-level form factors F_{n',n}(q) vs qℓ_B
+====================================================
 
 This example plots the lowest diagonal LL form factors as a function of
 dimensionless momentum qℓ_B, illustrating the Gaussian envelope and

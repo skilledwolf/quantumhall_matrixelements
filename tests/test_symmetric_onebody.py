@@ -1,9 +1,9 @@
+import math
 import warnings
-from importlib.util import module_from_spec, spec_from_file_location
-from pathlib import Path
 
 import numpy as np
 import pytest
+from scipy.special import loggamma
 
 import quantumhall_matrixelements.symmetric.onebody as symmetric_onebody
 from quantumhall_matrixelements import (
@@ -12,14 +12,38 @@ from quantumhall_matrixelements import (
 )
 from quantumhall_matrixelements._ho import logfact_table, precompute_radial_table
 
-_MODULE_PATH = (
-    Path(__file__).resolve().parents[1] / "playground" / "reproduce_macdonald_ritchie_tableII.py"
-)
-_SPEC = spec_from_file_location("reproduce_macdonald_ritchie_tableII", _MODULE_PATH)
-if _SPEC is None or _SPEC.loader is None:
-    raise RuntimeError(f"Could not load MacDonald-Ritchie helper from {_MODULE_PATH}")
-_MODULE = module_from_spec(_SPEC)
-_SPEC.loader.exec_module(_MODULE)
+
+def _macdonald_ritchie_coulomb(n_hi: int, n_lo: int, m: int) -> float:
+    """Independent reference for ``V^m_{N',N}`` from MacDonald-Ritchie Eq. (13).
+
+    Phys. Rev. B 33, 8336 (1986): attractive ``-e^2/r`` impurity in units of
+    ``e^2/lB``, with ``M = N - m``, evaluated as the terminating
+    ``3F2(-N, Delta+1/2, 1/2; Delta+1, m-N+1/2; 1)`` series. Symmetric in N', N.
+    """
+    if n_hi < n_lo:
+        n_hi, n_lo = n_lo, n_hi
+    delta = n_hi - n_lo
+    m_lo, m_hi = n_lo - m, n_hi - m
+    log_pref = 0.5 * (
+        math.log(2.0 / math.pi)
+        + loggamma(n_hi + 1.0)
+        + loggamma(m_lo + 1.0)
+        - loggamma(n_lo + 1.0)
+        - loggamma(m_hi + 1.0)
+    )
+    log_gammas = (
+        loggamma(delta + 0.5)
+        - loggamma(delta + 1.0)
+        + loggamma(m_lo + 0.5)
+        - loggamma(m_lo + 1.0)
+        - 0.5 * math.log(math.pi)
+    )
+    hyp = term = 1.0
+    for k in range(n_lo):
+        term *= (k - n_lo) * (delta + 0.5 + k) * (0.5 + k)
+        term /= (delta + 1.0 + k) * (m - n_lo + 0.5 + k) * (k + 1.0)
+        hyp += term
+    return -math.exp(log_pref + log_gammas) * hyp
 
 
 def test_central_onebody_exact_selection_rule_and_lll_coulomb_value():
@@ -139,7 +163,7 @@ def test_central_onebody_closed_form_matches_macdonald_ritchie_reference():
             -0.5
             * np.sqrt(np.pi)
             * (-1.0 if (n_row - n_col) % 2 else 1.0)
-            * _MODULE.V_coulomb_symmetric_gauge(n_row, n_col, n_row - m_row)
+            * _macdonald_ritchie_coulomb(n_row, n_col, n_row - m_row)
             for n_row, m_row, n_col, _m_col in select_list
         ],
         dtype=float,

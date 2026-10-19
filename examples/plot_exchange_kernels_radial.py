@@ -1,7 +1,9 @@
-"""Exchange kernel diagonal elements X_{nnnn}(G) vs |G|ℓ_B.
+"""
+Exchange kernel diagonal elements X_{nnnn}(G) vs Gℓ_B
+=====================================================
 
 This example computes selected diagonal components of the exchange kernel
-and plots their real parts as a function of |G|ℓ_B.
+and plots their real parts as a function of ``|G|ℓ_B``.
 """
 from __future__ import annotations
 
